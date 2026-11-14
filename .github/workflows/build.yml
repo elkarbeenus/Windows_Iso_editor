@@ -1,7 +1,9 @@
 name: Build & Release
 
-# - every push to main: tests only (fast)
-# - tag v* (e.g. v0.0.1): tests + AppImage + Windows exe + GitHub release
+# - push to main: tests. If the version in package.json has no release yet
+#   (tag v<version> missing), AppImage + Windows exe are built and the release
+#   v<version> is created automatically (tag included).
+# - tag v* pushed by hand: same as above for that tag
 # - manual run: Actions tab -> "Build & Release" -> "Run workflow"
 on:
   push:
@@ -22,6 +24,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  meta:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+      build: ${{ steps.v.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        shell: bash
+        run: |
+          V=$(node -p "require('./package.json').version")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if [ -n "$(git ls-remote --tags origin "refs/tags/v$V")" ] && [ "$GITHUB_REF" != "refs/tags/v$V" ]; then
+            REL=false
+          else
+            REL=true
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then REL=false; fi
+          BUILD=$REL
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "${{ inputs.build }}" = "true" ]; then BUILD=true; fi
+          echo "release=$REL" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "version=$V release=$REL build=$BUILD"
+
   test:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
@@ -43,8 +70,8 @@ jobs:
           retention-days: 5
 
   build-linux:
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build)
+    needs: [meta, test]
+    if: needs.meta.outputs.build == 'true'
     # Ubuntu 22.04 = older glibc -> AppImage also runs on SteamOS
     runs-on: ubuntu-22.04
     timeout-minutes: 45
@@ -91,8 +118,8 @@ jobs:
           retention-days: 5
 
   build-windows:
-    needs: test
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build)
+    needs: [meta, test]
+    if: needs.meta.outputs.build == 'true'
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -137,8 +164,8 @@ jobs:
           retention-days: 5
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-linux, build-windows]
+    if: needs.meta.outputs.release == 'true'
+    needs: [meta, build-linux, build-windows]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -148,14 +175,15 @@ jobs:
       - name: Release notes from CHANGELOG.md
         shell: bash
         run: |
-          V="${GITHUB_REF_NAME#v}"
+          V="${{ needs.meta.outputs.version }}"
           awk -v v="## v${V}" '$0 == v { f = 1; next } f && /^## / { exit } f { print }' CHANGELOG.md > notes.md
           [ -s notes.md ] || echo "Windows ISO Editor ${V}" > notes.md
           cat notes.md
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Windows ISO Editor ${{ github.ref_name }}
+          tag_name: v${{ needs.meta.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: Windows ISO Editor v${{ needs.meta.outputs.version }}
           body_path: notes.md
           make_latest: true
           files: |
@@ -167,7 +195,7 @@ jobs:
   # so the state can be checked with plain git.
   report:
     if: always()
-    needs: [test, build-linux, build-windows, release]
+    needs: [meta, test, build-linux, build-windows, release]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v4
@@ -184,6 +212,7 @@ jobs:
           git config user.email "ci-status@users.noreply.github.com"
           cat > status.txt <<EOF
           ref=${GITHUB_REF_NAME}
+          version=${{ needs.meta.outputs.version }}
           sha=${GITHUB_SHA}
           run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           test=${{ needs.test.result }}
