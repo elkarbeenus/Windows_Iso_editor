@@ -1,0 +1,26 @@
+[package]
+name = "windows-iso-editor"
+version = "0.0.1"
+description = "Windows ISO Editor - debloat Windows 11 installation ISOs safely"
+authors = ["Dominic Lesina", "Claude"]
+license = "MIT"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+tauri = { version = "1", features = ["dialog-open", "dialog-save", "shell-open"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+wie-core = { path = "../core" }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

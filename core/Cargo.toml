@@ -1,0 +1,8 @@
+[package]
+name = "wie-core"
+version = "0.0.1"
+edition = "2021"
+description = "Core of Windows ISO Editor: UDF append-only patcher and debloat answer-file generator"
+license = "MIT"
+
+[dependencies]

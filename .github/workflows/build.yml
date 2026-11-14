@@ -1,0 +1,198 @@
+name: Build & Release
+
+# - every push to main: tests only (fast)
+# - tag v* (e.g. v0.0.1): tests + AppImage + Windows exe + GitHub release
+# - manual run: Actions tab -> "Build & Release" -> "Run workflow"
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      build:
+        description: "Also build AppImage + exe (without release)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Core tests (UDF patcher, answer file, protection list)
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          cargo test --manifest-path core/Cargo.toml 2>&1 | tee logs/test.log
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-test
+          path: logs/
+          retention-days: 5
+
+  build-linux:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build)
+    # Ubuntu 22.04 = older glibc -> AppImage also runs on SteamOS
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages for Tauri
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev file
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - run: npm install
+      - name: Build AppImage
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          npx tauri build --bundles appimage 2>&1 | tee logs/linux.log
+      - name: Collect
+        shell: bash
+        run: |
+          V=$(node -p "require('./package.json').version")
+          mkdir -p out
+          cp src-tauri/target/release/bundle/appimage/*.AppImage "out/Windows-ISO-Editor_${V}_x86_64.AppImage"
+          chmod +x out/*.AppImage
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: out/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-linux
+          path: logs/
+          retention-days: 5
+
+  build-windows:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+      - run: npm install
+      - name: Build Windows setup + portable exe
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          npx tauri build --bundles nsis 2>&1 | tee logs/windows.log
+      - name: Collect
+        shell: bash
+        run: |
+          V=$(node -p "require('./package.json').version")
+          mkdir -p out
+          cp src-tauri/target/release/bundle/nsis/*-setup.exe "out/Windows-ISO-Editor_${V}_x64-setup.exe"
+          for f in "src-tauri/target/release/windows-iso-editor.exe" "src-tauri/target/release/Windows ISO Editor.exe"; do
+            if [ -f "$f" ]; then cp "$f" "out/Windows-ISO-Editor_${V}_x64-portable.exe"; break; fi
+          done
+          ls out/*-portable.exe
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: out/
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-windows
+          path: logs/
+          retention-days: 5
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          awk -v v="## v${V}" '$0 == v { f = 1; next } f && /^## / { exit } f { print }' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "Windows ISO Editor ${V}" > notes.md
+          cat notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Windows ISO Editor ${{ github.ref_name }}
+          body_path: notes.md
+          make_latest: true
+          files: |
+            dist/linux/*.AppImage
+            dist/windows/*.exe
+          fail_on_unmatched_files: true
+
+  # Writes the result of every job (plus logs) to the branch "ci-status",
+  # so the state can be checked with plain git.
+  report:
+    if: always()
+    needs: [test, build-linux, build-windows, release]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: logs-*
+          path: logs
+      - name: Publish status
+        shell: bash
+        run: |
+          mkdir -p st && cd st
+          git init -q -b ci-status
+          git config user.name "ci-status"
+          git config user.email "ci-status@users.noreply.github.com"
+          cat > status.txt <<EOF
+          ref=${GITHUB_REF_NAME}
+          sha=${GITHUB_SHA}
+          run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          test=${{ needs.test.result }}
+          build-linux=${{ needs.build-linux.result }}
+          build-windows=${{ needs.build-windows.result }}
+          release=${{ needs.release.result }}
+          EOF
+          cp -r ../logs . 2>/dev/null || true
+          find logs -name '*.log' -exec sh -c 'tail -n 400 "$1" > "$1.tmp" && mv "$1.tmp" "$1"' _ {} \; 2>/dev/null || true
+          git add -A
+          git commit -qm "CI status ${GITHUB_REF_NAME} ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ci-status

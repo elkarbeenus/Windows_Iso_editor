@@ -1,0 +1,58 @@
+{
+  "build": {
+    "devPath": "../ui",
+    "distDir": "../ui",
+    "withGlobalTauri": true
+  },
+  "package": {
+    "productName": "Windows ISO Editor",
+    "version": "0.0.1"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "dialog": {
+        "all": false,
+        "open": true,
+        "save": true
+      },
+      "shell": {
+        "all": false,
+        "open": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "identifier": "de.lesina.windowsisoeditor",
+      "shortDescription": "Debloat Windows 11 ISOs safely",
+      "longDescription": "Removes Copilot, Recall, Cortana, ads and bloatware from Windows 11 installation ISOs without touching the installer. Created by Dominic Lesina x Claude.",
+      "copyright": "Dominic Lesina x Claude",
+      "category": "Utility",
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/icon.png",
+        "icons/icon.ico"
+      ],
+      "windows": {
+        "webviewInstallMode": { "type": "downloadBootstrapper" }
+      }
+    },
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "title": "Windows ISO Editor",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 860,
+        "minHeight": 600,
+        "resizable": true,
+        "center": true,
+        "fileDropEnabled": true
+      }
+    ]
+  }
+}
