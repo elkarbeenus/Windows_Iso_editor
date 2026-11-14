@@ -9,10 +9,14 @@ $t = Join-Path $env:RUNNER_TEMP "wie"
 New-Item -ItemType Directory -Force $t | Out-Null
 Set-Location $t
 
-function Hashes($dir) {
-  Get-ChildItem -LiteralPath $dir -Recurse -File | ForEach-Object {
-    $rel = $_.FullName.Substring($dir.Length).TrimStart('\').ToLower()
-    "{0} {1}" -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash, $rel
+# .NET only: drives mounted during this session are unknown to PowerShell's providers
+function Hashes([string]$dir) {
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  [System.IO.Directory]::EnumerateFiles($dir, '*', [System.IO.SearchOption]::AllDirectories) | ForEach-Object {
+    $rel = $_.Substring($dir.Length).TrimStart('\').ToLower()
+    $fs = [System.IO.File]::OpenRead($_)
+    try { $h = [BitConverter]::ToString($sha.ComputeHash($fs)).Replace('-', '') } finally { $fs.Dispose() }
+    "$h $rel"
   } | Sort-Object { $_.Substring(65) }
 }
 function Letter($img) { ((Get-DiskImage -ImagePath $img) | Get-Volume).DriveLetter }
@@ -38,7 +42,7 @@ $lo = Letter "$t\in.iso"; $lp = Letter "$t\out.iso"
 $ho = Hashes "${lo}:\"
 $hp = Hashes "${lp}:\" | Where-Object { $_ -notmatch 'autounattend\.xml$' }
 if (Compare-Object $ho $hp) { Compare-Object $ho $hp | Format-Table | Out-String | Write-Host; throw "files differ under Windows" }
-if (-not (Test-Path "${lp}:\autounattend.xml")) { throw "autounattend.xml not visible to Windows" }
+if (-not [System.IO.File]::Exists("${lp}:\autounattend.xml")) { throw "autounattend.xml not visible to Windows" }
 $a = [IO.File]::ReadAllBytes("${lp}:\autounattend.xml"); $b = [IO.File]::ReadAllBytes("$t\expected.xml")
 if ([Convert]::ToBase64String($a) -ne [Convert]::ToBase64String($b)) { throw "autounattend.xml content differs" }
 "OK Windows UDF: $($ho.Count) original files identical, autounattend.xml readable"
@@ -71,9 +75,9 @@ $env:WIE_SPLIT_THRESHOLD = '100000'; $env:WIE_SPLIT_MB = '1'
 RunWorker @('--mode', 'windows')
 Remove-Item Env:WIE_SPLIT_THRESHOLD, Env:WIE_SPLIT_MB
 $l = (Get-Partition -DiskNumber $n -PartitionNumber 1).DriveLetter
-Get-ChildItem "${l}:\sources" | Format-Table Name, Length | Out-String | Write-Host
-if (Test-Path "${l}:\sources\install.wim") { throw "install.wim should be split" }
-if (-not (Test-Path "${l}:\sources\install.swm")) { throw "install.swm missing" }
+[System.IO.Directory]::GetFiles("${l}:\sources") | Write-Host
+if ([System.IO.File]::Exists("${l}:\sources\install.wim")) { throw "install.wim should be split" }
+if (-not [System.IO.File]::Exists("${l}:\sources\install.swm")) { throw "install.swm missing" }
 dism.exe /Get-WimInfo /WimFile:"${l}:\sources\install.swm" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "swm not readable by DISM" }
 "OK stick (split with DISM)"

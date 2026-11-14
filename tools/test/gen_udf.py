@@ -97,7 +97,9 @@ class Img:
         exts = []
         off = 0
         lb = d_lbn
-        chunk = 3 * S
+        # small files: several 3-block extents (tests multi-extent reading);
+        # big files: few large extents so the allocation descriptors fit the FE block
+        chunk = 3 * S if len(data) < 60 * S else max(3 * S, -(-len(data) // (8 * S)) * S)
         while off < len(data) or not exts:
             ln = min(chunk, len(data) - off)
             exts.append((lb, ln))
