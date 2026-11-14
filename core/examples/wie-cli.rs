@@ -43,7 +43,13 @@ fn main() {
         Some("usb-list") => println!("{:#?}", wie_core::usb::list_disks()),
         Some("detect") => println!("{:#?}", wie_core::usb::detect_image(Path::new(&a[2]))),
         Some("catalog") => print!("{}", wie_core::catalog::catalog_json()),
-        Some("xml") => print!("{}", wie_core::export_xml(&sel(a.get(2)), "dev").unwrap()),
+        Some("xml") => {
+            let x = wie_core::export_xml(&sel(a.get(2)), "dev").unwrap();
+            match a.get(3) {
+                Some(out) => std::fs::write(out, x).unwrap(),
+                None => print!("{x}"),
+            }
+        }
         _ => eprintln!("usage: wie-cli inspect|build|xml ..."),
     }
 }

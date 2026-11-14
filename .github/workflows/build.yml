@@ -269,6 +269,12 @@ jobs:
           awk -v v="## v${V}" '$0 == v { f = 1; next } f && /^## / { exit } f { print }' CHANGELOG.md > notes.md
           [ -s notes.md ] || echo "Windows ISO Editor ${V}" > notes.md
           cat notes.md
+      - name: Checksums for the in-app updater
+        shell: bash
+        run: |
+          mkdir -p upload
+          cp dist/linux/*.AppImage dist/windows/*.exe upload/
+          (cd upload && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.meta.outputs.version }}
@@ -277,8 +283,7 @@ jobs:
           body_path: notes.md
           make_latest: true
           files: |
-            dist/linux/*.AppImage
-            dist/windows/*.exe
+            upload/*
           fail_on_unmatched_files: true
 
   # Writes the result of every job (plus logs) to the branch "ci-status",

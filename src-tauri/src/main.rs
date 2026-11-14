@@ -349,6 +349,206 @@ async fn write_usb(window: tauri::Window, image: String, device: String, mode: S
     .map_err(|e| e.to_string())?
 }
 
+// ------------------------------------------------------------------ in-app updater
+
+const REPO: &str = "elkarbeenus/Windows_Iso_editor";
+
+#[derive(Serialize, Clone)]
+struct UpdateDto {
+    version: String,
+    display: String,
+    notes: String,
+    asset_name: String,
+    asset_url: String,
+    size: u64,
+    sums_url: String,
+    /// "appimage" | "portable" | "setup" | "" (cannot install automatically)
+    method: String,
+    page: String,
+}
+
+fn curl() -> std::process::Command {
+    let mut c = std::process::Command::new(if cfg!(target_os = "windows") { "curl.exe" } else { "curl" });
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        c.creation_flags(0x0800_0000);
+    }
+    #[cfg(target_os = "linux")]
+    for v in ["LD_LIBRARY_PATH", "LD_PRELOAD"] {
+        c.env_remove(v);
+    }
+    c
+}
+
+fn http_get(url: &str) -> Result<String, String> {
+    let out = curl()
+        .args(["-fsSL", "--max-time", "20", "-H", "Accept: application/vnd.github+json", "-H", "User-Agent: windows-iso-editor"])
+        .arg(url)
+        .output()
+        .map_err(|e| format!("curl: {e}"))?;
+    if !out.status.success() {
+        return Err(format!("HTTP: {}", String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+fn exe_dir_writable() -> bool {
+    let Ok(exe) = std::env::current_exe() else { return false };
+    let Some(dir) = exe.parent() else { return false };
+    let probe = dir.join(".wie-write-test");
+    let ok = std::fs::write(&probe, b"x").is_ok();
+    let _ = std::fs::remove_file(&probe);
+    ok
+}
+
+#[tauri::command]
+async fn check_update() -> Result<Option<UpdateDto>, String> {
+    if std::env::var_os("WIE_NO_UPDATE_CHECK").is_some() {
+        return Ok(None);
+    }
+    tauri::async_runtime::spawn_blocking(|| -> Result<Option<UpdateDto>, String> {
+        let txt = http_get(&format!("https://api.github.com/repos/{REPO}/releases/latest"))?;
+        let v: serde_json::Value = serde_json::from_str(&txt).map_err(|e| e.to_string())?;
+        let tag = v["tag_name"].as_str().unwrap_or_default().to_string();
+        if !wie_core::update::is_newer(&tag, VERSION) {
+            return Ok(None);
+        }
+        let assets = v["assets"].as_array().cloned().unwrap_or_default();
+        let find = |suffix: &str| assets.iter().find(|a| a["name"].as_str().map(|n| n.ends_with(suffix)).unwrap_or(false)).cloned();
+        let (method, asset) = if cfg!(target_os = "linux") {
+            if std::env::var_os("APPIMAGE").is_some() { ("appimage", find("_x86_64.AppImage")) } else { ("", find("_x86_64.AppImage")) }
+        } else if cfg!(target_os = "windows") {
+            if exe_dir_writable() { ("portable", find("_x64-portable.exe")) } else { ("setup", find("_x64-setup.exe")) }
+        } else {
+            ("", None)
+        };
+        let sums = find("SHA256SUMS.txt");
+        let notes: String = v["body"].as_str().unwrap_or_default().lines().filter(|l| !l.trim().is_empty()).take(8).collect::<Vec<_>>().join("\n");
+        let (asset_name, asset_url, size) = match &asset {
+            Some(a) => (
+                a["name"].as_str().unwrap_or_default().to_string(),
+                a["browser_download_url"].as_str().unwrap_or_default().to_string(),
+                a["size"].as_u64().unwrap_or(0),
+            ),
+            None => (String::new(), String::new(), 0),
+        };
+        let can = asset.is_some() && sums.is_some() && !method.is_empty();
+        Ok(Some(UpdateDto {
+            display: wie_core::update::display_version(&tag),
+            version: tag,
+            notes,
+            asset_name,
+            asset_url,
+            size,
+            sums_url: sums.and_then(|s| s["browser_download_url"].as_str().map(String::from)).unwrap_or_default(),
+            method: if can { method.to_string() } else { String::new() },
+            page: v["html_url"].as_str().unwrap_or_default().to_string(),
+        }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Downloads with progress (file size polling), verifies SHA-256.
+fn download_verified(window: &tauri::Window, u: &UpdateDto, target: &Path) -> Result<(), String> {
+    let sums = http_get(&u.sums_url)?;
+    let expected = wie_core::update::sum_for(&sums, &u.asset_name).ok_or("SHA256SUMS: entry missing")?;
+    let _ = std::fs::remove_file(target);
+    let mut child = curl()
+        .args(["-fL", "--retry", "3", "-H", "User-Agent: windows-iso-editor", "-o"])
+        .arg(target)
+        .arg(&u.asset_url)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("curl: {e}"))?;
+    loop {
+        if let Some(st) = child.try_wait().map_err(|e| e.to_string())? {
+            if !st.success() {
+                let _ = std::fs::remove_file(target);
+                return Err("Download fehlgeschlagen / download failed".into());
+            }
+            break;
+        }
+        let done = std::fs::metadata(target).map(|m| m.len()).unwrap_or(0);
+        let _ = window.emit("update-progress", Progress { phase: "download".into(), done, total: u.size });
+        std::thread::sleep(Duration::from_millis(300));
+    }
+    let _ = window.emit("update-progress", Progress { phase: "verify".into(), done: u.size, total: u.size });
+    let got = wie_core::update::sha256_file(target).map_err(|e| e.to_string())?;
+    if got != expected {
+        let _ = std::fs::remove_file(target);
+        return Err(format!("SHA-256 stimmt nicht / mismatch ({})", &got[..12]));
+    }
+    Ok(())
+}
+
+fn spawn_detached(path: &Path) -> Result<(), String> {
+    let mut c = std::process::Command::new(path);
+    #[cfg(target_os = "linux")]
+    for v in ["LD_LIBRARY_PATH", "LD_PRELOAD", "APPDIR", "APPIMAGE", "OWD", "ARGV0", "GDK_PIXBUF_MODULE_FILE", "GIO_EXTRA_MODULES", "GTK_PATH", "GTK_EXE_PREFIX", "GTK_DATA_PREFIX", "GTK_IM_MODULE_FILE", "GSETTINGS_SCHEMA_DIR", "GI_TYPELIB_PATH"] {
+        c.env_remove(v);
+    }
+    c.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn install_update(window: tauri::Window, update: serde_json::Value) -> Result<(), String> {
+    let u = UpdateDto {
+        version: update["version"].as_str().unwrap_or_default().into(),
+        display: String::new(),
+        notes: String::new(),
+        asset_name: update["asset_name"].as_str().unwrap_or_default().into(),
+        asset_url: update["asset_url"].as_str().unwrap_or_default().into(),
+        size: update["size"].as_u64().unwrap_or(0),
+        sums_url: update["sums_url"].as_str().unwrap_or_default().into(),
+        method: update["method"].as_str().unwrap_or_default().into(),
+        page: String::new(),
+    };
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        match u.method.as_str() {
+            "appimage" => {
+                let target = PathBuf::from(std::env::var_os("APPIMAGE").ok_or("APPIMAGE not set")?);
+                let tmp = target.with_extension("AppImage.download");
+                download_verified(&window, &u, &tmp)?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).map_err(|e| e.to_string())?;
+                }
+                // atomic replace in the same folder; the running copy keeps working until restart
+                std::fs::rename(&tmp, &target).map_err(|e| e.to_string())?;
+                spawn_detached(&target)?;
+            }
+            "portable" => {
+                let cur = std::env::current_exe().map_err(|e| e.to_string())?;
+                let tmp = cur.with_extension("download");
+                download_verified(&window, &u, &tmp)?;
+                let old = cur.with_extension("old");
+                let _ = std::fs::remove_file(&old);
+                // a running exe cannot be overwritten, but it can be renamed
+                std::fs::rename(&cur, &old).map_err(|e| e.to_string())?;
+                if let Err(e) = std::fs::rename(&tmp, &cur) {
+                    let _ = std::fs::rename(&old, &cur);
+                    return Err(e.to_string());
+                }
+                spawn_detached(&cur)?;
+            }
+            "setup" => {
+                let tmp = std::env::temp_dir().join(&u.asset_name);
+                download_verified(&window, &u, &tmp)?;
+                spawn_detached(&tmp)?;
+            }
+            _ => return Err("Automatisches Update hier nicht möglich / not possible here".into()),
+        }
+        std::thread::sleep(Duration::from_millis(400));
+        std::process::exit(0);
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Marker file: exists while a start is "unconfirmed". If the UI never reports
 /// back (grey window), the next start uses software rendering.
 fn start_marker() -> Option<PathBuf> {
@@ -377,6 +577,11 @@ fn main() {
         std::process::exit(wie_core::usb::worker_main(&argv[2..]));
     }
 
+    // leftover of a previous portable update
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::fs::remove_file(exe.with_extension("old"));
+    }
+
     #[cfg(target_os = "linux")]
     {
         // Stable rendering on SteamOS / newer WebKitGTK (prevents grey or empty windows)
@@ -402,7 +607,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![app_version, get_catalog, inspect_iso, build_iso, save_xml, preview_script, open_folder, ui_ready, list_usb, detect_image, write_usb])
+        .invoke_handler(tauri::generate_handler![app_version, get_catalog, inspect_iso, build_iso, save_xml, preview_script, open_folder, ui_ready, list_usb, detect_image, write_usb, check_update, install_update])
         .run(tauri::generate_context!())
         .expect("error while running Windows ISO Editor");
 }

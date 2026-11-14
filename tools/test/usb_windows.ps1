@@ -75,7 +75,7 @@ $img = $fsi.CreateResultImage()
 if ($LASTEXITCODE -ne 0) { throw "inspect of IMAPI ISO failed" }
 & $cli build "$t\in.iso" "$t\out.iso" recommended
 if ($LASTEXITCODE -ne 0) { throw "build failed" }
-& $cli xml recommended | Set-Content -NoNewline -Encoding ascii "$t\expected.xml"
+& $cli xml recommended "$t\expected.xml"
 
 # ---- 1) Windows UDF driver
 Mount-DiskImage -ImagePath "$t\in.iso" | Out-Null

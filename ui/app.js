@@ -80,6 +80,7 @@ function renderStatic() {
   document.querySelectorAll('[data-ico]').forEach(el => { el.innerHTML = icon(el.dataset.ico); });
   $('#langBtn').textContent = state.lang === 'de' ? 'EN' : 'DE';
   $('#homeBtn').innerHTML = `${icon('home')}<span>${t('home')}</span>`;
+  renderUpdate();
   $('#infoBtn').innerHTML = icon('info');
   $('#dropIcon').innerHTML = icon('upload');
   $('#buildBtn').innerHTML = `${icon('rocket')}<span>${t('build')}</span>`;
@@ -498,7 +499,46 @@ async function startUsb() {
   }
 }
 
+// ------------------------------------------------------------------ in-app update
+let UPDATE = null;
+let updating = false;
+async function checkUpdate() {
+  if (!T) return;
+  try { UPDATE = await invoke('check_update'); } catch (_) { UPDATE = null; }
+  renderUpdate();
+}
+function renderUpdate(extra) {
+  const bar = $('#updateBar');
+  if (!UPDATE) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  const action = UPDATE.method
+    ? `<button class="btn primary" id="updBtn" ${updating ? 'disabled' : ''}>${icon('refresh')}<span>${t('updBtn')}</span></button>`
+    : `<button class="btn ghost" id="updPage">${t('updPage')}</button>`;
+  bar.innerHTML = `<div class="upd-ico">${icon('rocket')}</div>
+    <div class="upd-txt"><div>${t('updAvail', esc(UPDATE.display))}</div><span>${extra || t('updLine')}</span></div>${action}`;
+  if ($('#updBtn')) $('#updBtn').onclick = installUpdate;
+  if ($('#updPage')) $('#updPage').onclick = () => T.shell.open(UPDATE.page);
+}
+async function installUpdate() {
+  if (updating || state.busy || state.usb.busy) return;
+  updating = true;
+  renderUpdate(t('updDownloading'));
+  const un = await T.event.listen('update-progress', e => {
+    const p = e.payload;
+    const pct = p.total ? Math.min(100, p.done / p.total * 100).toFixed(0) : '';
+    renderUpdate(p.phase === 'verify' ? t('updVerify') : `${t('updDownloading')} ${pct} %`);
+  });
+  try {
+    await invoke('install_update', { update: UPDATE });
+    renderUpdate(t('updRestart'));
+  } catch (e) {
+    updating = false;
+    renderUpdate(`${t('updFailed')}: ${esc(e)}`);
+  } finally { un(); }
+}
+
 // ------------------------------------------------------------------ init
+function renderUpdateSafe() { try { renderUpdate(); } catch (_) {} }
 async function init() {
   renderStatic();
   invoke('ui_ready').catch(() => {});
@@ -549,6 +589,7 @@ async function init() {
     T.event.listen('tauri://file-drop-cancelled', () => { $('#drop').classList.remove('hover'); $('#usbDrop').classList.remove('hover'); });
   }
   render();
+  checkUpdate();
 }
 
 init();

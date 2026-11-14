@@ -3,6 +3,7 @@ pub mod crc32;
 pub mod usb;
 pub mod udf;
 pub mod unattend;
+pub mod update;
 
 use std::fs::File;
 use std::io::{Read, Write};

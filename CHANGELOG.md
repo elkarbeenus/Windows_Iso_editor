@@ -11,6 +11,11 @@
 - Sicherheitssperren: Nur USB-/Wechseldatenträger, niemals das Systemlaufwerk; vor dem Löschen kommt eine Bestätigung
 - SteamOS/Linux: Root-Rechte per Passwortabfrage (pkexec); Windows: einmalige Administrator-Abfrage
 
+**Neu: Automatische Updates in der App**
+- Beim Start prüft die App die GitHub-Releases; ist eine neuere Version da, erscheint oben ein Banner mit **„Jetzt aktualisieren“**
+- Ein Klick: herunterladen, per SHA-256 prüfen, App ersetzen, neu starten – Einstellungen bleiben erhalten (AppImage, portable exe; installierte Version startet den neuen Installer)
+- Abschaltbar für Offline-Nutzung mit `WIE_NO_UPDATE_CHECK=1`
+
 **Installationsfehler beim Partitionieren untersucht**
 - Die Antwortdatei enthält keine Laufwerkseinstellungen. Neue automatische Tests belegen: Windows **und** der Linux-Kernel lesen die bearbeitete ISO Datei für Datei identisch zum Original
 - Tipp bei „Es konnte keine neue Partition erstellt werden“: im Setup Shift+F10 → `diskpart` → `select disk 0` → `clean` → `convert gpt`, dann den nicht zugewiesenen Speicher wählen und direkt „Weiter“

@@ -1,5 +1,9 @@
 const I18N = {
   de: {
+    updAvail: v => `Neue Version <b>${v}</b> verfügbar`,
+    updLine: 'Lädt die neue Version herunter, prüft sie (SHA-256), ersetzt die App und startet neu. Einstellungen bleiben erhalten.',
+    updBtn: 'Jetzt aktualisieren', updPage: 'Download-Seite öffnen',
+    updDownloading: 'Lade Update …', updVerify: 'Prüfe Update …', updRestart: 'Starte neu …', updFailed: 'Update fehlgeschlagen',
     homeH1: 'Was möchtest du machen?',
     homeLead: 'Windows-ISO entrümpeln oder direkt einen bootfähigen USB-Stick erstellen – alles in einer App.',
     modeIsoT: 'Windows-ISO anpassen',
@@ -92,6 +96,10 @@ const I18N = {
     chooseOutput: 'Speicherort wählen',
   },
   en: {
+    updAvail: v => `New version <b>${v}</b> available`,
+    updLine: 'Downloads the new version, verifies it (SHA-256), replaces the app and restarts. Settings are kept.',
+    updBtn: 'Update now', updPage: 'Open download page',
+    updDownloading: 'Downloading update …', updVerify: 'Verifying update …', updRestart: 'Restarting …', updFailed: 'Update failed',
     homeH1: 'What would you like to do?',
     homeLead: 'Debloat a Windows ISO or create a bootable USB stick right away – all in one app.',
     modeIsoT: 'Customize Windows ISO',
