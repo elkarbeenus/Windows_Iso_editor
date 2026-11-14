@@ -7,7 +7,9 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 
 const state = {
   lang: 'de',
+  mode: 'home',
   step: 1,
+  usb: { image: null, disks: [], disk: null, busy: false, result: null, log: [], loading: false },
   catalog: null,
   iso: null,
   selected: new Set(),
@@ -39,6 +41,9 @@ const MOCK = {
   preview_script: async () => '# preview',
   open_folder: async () => {},
   ui_ready: async () => {},
+  list_usb: async () => [{ id: '/dev/sdc', name: 'SanDisk Ultra', size: 32e9, removable: true, usb: true, mounts: ['/run/media/deck/USB'] }, { id: '/dev/sdd', name: 'Kingston DataTraveler', size: 64e9, removable: true, usb: true, mounts: [] }],
+  detect_image: async ({ path }) => ({ path, file_name: path.split(/[\\/]/).pop(), mode: /win/i.test(path) ? 'windows' : 'raw', kind: /win/i.test(path) ? 'windows' : /steam/i.test(path) ? 'steamos' : 'linux', label: 'CCCOMA_X64FRE', size: 5.8e9, compressed: null, needed: 5.9e9 }),
+  write_usb: async () => { for (let i = 0; i <= 20; i++) { await new Promise(r => setTimeout(r, 80)); onUsbEvent({ t: 'progress', pct: i * 5, stage: i < 16 ? 'Kopiere Dateien' : 'Prüfe Stick' }); } return 'Fertig! Der Stick ist bootfähig und geprüft.'; },
 };
 
 // ------------------------------------------------------------------ helpers
@@ -74,14 +79,24 @@ function renderStatic() {
   document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll('[data-ico]').forEach(el => { el.innerHTML = icon(el.dataset.ico); });
   $('#langBtn').textContent = state.lang === 'de' ? 'EN' : 'DE';
+  $('#homeBtn').innerHTML = `${icon('home')}<span>${t('home')}</span>`;
   $('#infoBtn').innerHTML = icon('info');
   $('#dropIcon').innerHTML = icon('upload');
   $('#buildBtn').innerHTML = `${icon('rocket')}<span>${t('build')}</span>`;
 }
 
 // ------------------------------------------------------------------ navigation
+function setMode(m) {
+  if (state.busy || state.usb.busy) return;
+  state.mode = m;
+  render();
+  if (m === 'usb') refreshDisks();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
 function go(step) {
-  if (state.busy) return;
+  if (state.busy || state.usb.busy) return;
+  state.mode = 'iso';
   if (step > 1 && !state.iso) { toast(t('noIso'), 'warn'); return; }
   state.step = step;
   render();
@@ -89,7 +104,15 @@ function go(step) {
 }
 
 function render() {
-  for (let i = 1; i <= 3; i++) $('#page' + i).classList.toggle('hidden', state.step !== i);
+  const iso = state.mode === 'iso';
+  $('#pageHome').classList.toggle('hidden', state.mode !== 'home');
+  $('#pageUsb').classList.toggle('hidden', state.mode !== 'usb');
+  for (let i = 1; i <= 3; i++) $('#page' + i).classList.toggle('hidden', !iso || state.step !== i);
+  $('#steps').style.visibility = iso ? 'visible' : 'hidden';
+  $('.bottombar').classList.toggle('hidden', !iso);
+  $('#homeBtn').classList.toggle('hidden', state.mode === 'home');
+  if (state.mode === 'usb') { renderUsb(); return; }
+  if (!iso) return;
   document.querySelectorAll('.step').forEach(b => {
     const s = +b.dataset.step;
     b.classList.toggle('active', s === state.step);
@@ -301,9 +324,11 @@ function renderResult() {
       <p>${t('doneText')}</p>
       <div class="path small">${esc(state.done.res.output)}</div>
       <div class="next-steps"><b>${t('doneNext')}</b><ol>${t('doneSteps').map(s => `<li>${esc(s)}</li>`).join('')}</ol></div>
-      <div class="row"><button class="btn ghost" id="openFolder">${icon('folder')}${t('openFolder')}</button>
-      <button class="btn primary" id="again">${t('again')}</button></div>
+      <button class="btn primary big" id="toUsb">${icon('usb')}<span>${t('toUsb')}</span></button>
+      <div class="row" style="margin-top:10px"><button class="btn ghost" id="openFolder">${icon('folder')}${t('openFolder')}</button>
+      <button class="btn ghost" id="again">${t('again')}</button></div>
     </div>`;
+    $('#toUsb').onclick = () => { setMode('usb'); loadUsbImage(state.done.res.output); };
     $('#openFolder').onclick = () => invoke('open_folder', { path: state.done.res.output }).catch(e => toast(esc(e), 'error'));
     $('#again').onclick = () => { state.done = null; state.iso = null; state.output = ''; $('#isoInfo').classList.add('hidden'); go(1); };
   } else {
@@ -350,6 +375,129 @@ function showInfo() {
   $('#ghLink').onclick = () => { const u = 'https://github.com/elkarbeenus/Windows_Iso_editor'; T ? T.shell.open(u) : window.open(u); };
 }
 
+// ------------------------------------------------------------------ USB stick
+const isLinux = () => !navigator.userAgent.includes('Windows');
+
+async function refreshDisks() {
+  state.usb.loading = true; renderUsb();
+  try { state.usb.disks = await invoke('list_usb'); } catch (e) { state.usb.disks = []; toast(esc(e), 'error'); }
+  state.usb.loading = false;
+  if (state.usb.disk && !state.usb.disks.find(d => d.id === state.usb.disk)) state.usb.disk = null;
+  if (!state.usb.disk && state.usb.disks.length === 1) state.usb.disk = state.usb.disks[0].id;
+  renderUsb();
+}
+
+async function pickUsbImage() {
+  if (state.usb.busy) return;
+  if (!T) return loadUsbImage('/home/deck/Downloads/Win11_debloated.iso');
+  const p = await T.dialog.open({ multiple: false, filters: [{ name: 'ISO / Image', extensions: ['iso', 'ISO', 'img', 'IMG', 'bz2', 'gz', 'xz', 'zip', 'zst', 'raw', 'bin'] }, { name: '*', extensions: ['*'] }] });
+  if (p) loadUsbImage(Array.isArray(p) ? p[0] : p);
+}
+
+async function loadUsbImage(path) {
+  state.usb.result = null;
+  state.usb.image = { loading: true, file_name: path.split(/[\\/]/).pop() };
+  renderUsb();
+  try { state.usb.image = await invoke('detect_image', { path }); }
+  catch (e) { state.usb.image = null; toast(esc(e), 'error'); }
+  renderUsb();
+}
+
+function kindInfo(img) {
+  const k = { windows: ['windows', 'kindWindows', 'kindWindowsD'], linux: ['linux', 'kindLinux', 'kindLinuxD'], steamos: ['steam', 'kindSteamos', 'kindSteamosD'] }[img.kind] || ['disc', 'kindImage', 'kindImageD'];
+  return { ico: k[0], title: t(k[1]), desc: t(k[2]) };
+}
+
+function renderUsb() {
+  const u = state.usb;
+  $('#usbRefresh').innerHTML = `${icon('refresh')}${t('refresh')}`;
+  $('#usbDrop').classList.toggle('compact', !!u.image);
+  const img = u.image;
+  if (!img) $('#usbImage').innerHTML = '';
+  else if (img.loading) $('#usbImage').innerHTML = `<div class="loading"><span class="spinner"></span>${esc(img.file_name)}</div>`;
+  else {
+    const k = kindInfo(img);
+    $('#usbImage').innerHTML = `<div class="img-card">
+      <div class="img-ico">${icon(k.ico)}</div>
+      <div class="img-txt"><div class="file">${esc(img.file_name)}</div>
+        <div class="img-kind"><i class="tag">${k.title}</i> ${fmtSize(img.size)}${img.compressed ? ` · ${t('packed')} (${esc(img.compressed)})` : ''}${img.label ? ` · ${esc(img.label)}` : ''}</div>
+        <p class="muted small">${k.desc}</p></div></div>`;
+  }
+  const need = img && !img.loading ? (img.needed || 0) : 0;
+  if (u.loading) $('#usbDisks').innerHTML = `<div class="loading"><span class="spinner"></span></div>`;
+  else if (!u.disks.length) $('#usbDisks').innerHTML = `<div class="empty">${icon('usb')}<p>${t('noDisks')}</p></div>`;
+  else $('#usbDisks').innerHTML = u.disks.map(d => {
+    const small = need && d.size < need;
+    return `<button class="disk ${u.disk === d.id ? 'on' : ''} ${small ? 'small' : ''}" data-disk="${esc(d.id)}" ${small || u.busy ? 'disabled' : ''}>
+      <div class="disk-ico">${icon('usb')}</div>
+      <div class="disk-txt"><b>${esc(d.name)}</b><span>${fmtSize(d.size)} · ${esc(d.id)}${d.mounts.length ? ` · ${t('inUse')}` : ''}${small ? ` · ${t('stickTooSmall')}` : ''}</span></div>
+      <div class="radio"></div></button>`;
+  }).join('');
+  const disk = u.disks.find(d => d.id === u.disk);
+  const ready = img && !img.loading && disk && !u.busy;
+  $('#usbWarn').innerHTML = disk ? `${icon('alert')}<div>${t('usbWarn', esc(disk.name) + ' (' + fmtSize(disk.size) + ')')}</div>` : `${icon('info')}<div>${t('usbWarnNone')}</div>`;
+  $('#usbWarn').className = 'alert ' + (disk ? 'warn' : 'info');
+  $('#usbBtn').innerHTML = `${icon('usb')}<span>${t('usbBtn')}</span>`;
+  $('#usbBtn').disabled = !ready;
+  $('#usbHint').textContent = isLinux() ? t('usbHintLinux') : t('usbHintWin');
+  $('#usbAction').classList.toggle('hidden', u.busy || !!u.result);
+  $('#usbProgress').classList.toggle('hidden', !u.busy);
+  const r = $('#usbResult');
+  if (!u.result) { r.classList.add('hidden'); return; }
+  r.classList.remove('hidden');
+  if (u.result.ok) {
+    r.innerHTML = `<div class="result ok"><div class="result-ico">${icon('check')}</div><h3>${t('usbDoneT')}</h3><p>${esc(u.result.msg)}</p>
+      <div class="next-steps">${img && img.mode === 'windows' ? t('usbNextWin') : t('usbNextRaw')}</div>
+      <button class="btn ghost" id="usbAgain">${t('another')}</button></div>`;
+  } else {
+    r.innerHTML = `<div class="alert error">${icon('alert')}<div><b>${t('usbFailedT')}</b><br>${esc(u.result.msg)}</div></div>
+      <div class="row" style="margin-top:12px"><button class="btn ghost" id="usbAgain">${t('back')}</button></div>`;
+  }
+  $('#usbAgain').onclick = () => { u.result = null; refreshDisks(); };
+}
+
+function onUsbEvent(ev) {
+  const u = state.usb;
+  if (ev.t === 'progress') {
+    $('#usbBar').style.width = ev.pct.toFixed(1) + '%';
+    $('#usbStage').textContent = ev.stage;
+    $('#usbPct').textContent = ev.pct.toFixed(0) + ' %';
+  } else if (ev.t === 'log' || ev.t === 'error') {
+    u.log.push(ev.msg);
+    $('#usbLog').textContent = u.log.join('\n');
+  }
+}
+
+function confirmUsb() {
+  const u = state.usb;
+  const disk = u.disks.find(d => d.id === u.disk);
+  if (!disk || !u.image) return;
+  modal(`<div class="modal-head"><h3>${icon('alert')}${t('confirmTitle')}</h3><button class="icon-btn" data-close>${icon('x')}</button></div>
+    <p>${t('confirmText', esc(disk.name), fmtSize(disk.size))}</p>
+    <div class="row end"><button class="btn ghost" data-close>${t('cancel')}</button><button class="btn danger" id="confirmGo">${t('confirmYes')}</button></div>`);
+  $('#confirmGo').onclick = () => { closeModal(); startUsb(); };
+}
+
+async function startUsb() {
+  const u = state.usb;
+  u.busy = true; u.result = null; u.log = [];
+  $('#usbLog').textContent = '';
+  onUsbEvent({ t: 'progress', pct: 0, stage: '…' });
+  renderUsb();
+  let unlisten = null;
+  if (T) unlisten = await T.event.listen('usb-event', e => onUsbEvent(e.payload));
+  try {
+    const msg = await invoke('write_usb', { image: u.image.path, device: u.disk, mode: u.image.mode, lang: state.lang });
+    u.result = { ok: true, msg };
+  } catch (e) {
+    u.result = { ok: false, msg: String(e) };
+  } finally {
+    if (unlisten) unlisten();
+    u.busy = false;
+    renderUsb();
+  }
+}
+
 // ------------------------------------------------------------------ init
 async function init() {
   renderStatic();
@@ -363,6 +511,15 @@ async function init() {
   }
   applyPreset('rec');
 
+  $('#modeIso').onclick = () => go(1);
+  $('#modeUsb').onclick = () => setMode('usb');
+  $('#brand').onclick = () => setMode('home');
+  $('#homeBtn').onclick = () => setMode('home');
+  $('#usbDrop').onclick = pickUsbImage;
+  $('#usbDrop').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') pickUsbImage(); };
+  $('#usbRefresh').onclick = refreshDisks;
+  $('#usbDisks').addEventListener('click', e => { const b = e.target.closest('[data-disk]'); if (b && !b.disabled) { state.usb.disk = b.dataset.disk; renderUsb(); } });
+  $('#usbBtn').onclick = confirmUsb;
   $('#pickBtn').onclick = e => { e.stopPropagation(); pickIso(); };
   $('#drop').onclick = pickIso;
   $('#drop').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') pickIso(); };
@@ -382,11 +539,14 @@ async function init() {
   if (T) {
     T.event.listen('tauri://file-drop', e => {
       $('#drop').classList.remove('hover');
-      const f = (e.payload || []).find(p => /\.iso$/i.test(p));
-      if (f && !state.busy) { go(1); loadIso(f); }
+      const files = e.payload || [];
+      if (state.busy || state.usb.busy || !files.length) return;
+      if (state.mode === 'usb') { loadUsbImage(files[0]); return; }
+      const f = files.find(p => /\.iso$/i.test(p));
+      if (f) { go(1); loadIso(f); }
     });
-    T.event.listen('tauri://file-drop-hover', () => $('#drop').classList.add('hover'));
-    T.event.listen('tauri://file-drop-cancelled', () => $('#drop').classList.remove('hover'));
+    T.event.listen('tauri://file-drop-hover', () => { $('#drop').classList.add('hover'); $('#usbDrop').classList.add('hover'); });
+    T.event.listen('tauri://file-drop-cancelled', () => { $('#drop').classList.remove('hover'); $('#usbDrop').classList.remove('hover'); });
   }
   render();
 }

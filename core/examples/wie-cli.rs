@@ -39,6 +39,9 @@ fn main() {
                 }
             }
         }
+        Some("usb-worker") => std::process::exit(wie_core::usb::worker_main(&a[2..])),
+        Some("usb-list") => println!("{:#?}", wie_core::usb::list_disks()),
+        Some("detect") => println!("{:#?}", wie_core::usb::detect_image(Path::new(&a[2]))),
         Some("catalog") => print!("{}", wie_core::catalog::catalog_json()),
         Some("xml") => print!("{}", wie_core::export_xml(&sel(a.get(2)), "dev").unwrap()),
         _ => eprintln!("usage: wie-cli inspect|build|xml ..."),

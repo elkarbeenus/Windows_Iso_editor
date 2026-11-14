@@ -61,11 +61,45 @@ jobs:
           set -o pipefail
           mkdir -p logs
           cargo test --manifest-path core/Cargo.toml 2>&1 | tee logs/test.log
+      - name: USB + kernel UDF integration tests (loop devices)
+        shell: bash
+        run: |
+          set -o pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dosfstools wimtools bzip2 >/dev/null
+          cargo build --manifest-path core/Cargo.toml --example wie-cli
+          bash tools/test/usb_linux.sh 2>&1 | tee logs/usb-linux.log
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: logs-test
+          path: logs/
+          retention-days: 5
+
+  test-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build core + CLI (Windows)
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          cargo test --manifest-path core/Cargo.toml 2>&1 | tee logs/test-windows-build.log
+          cargo build --manifest-path core/Cargo.toml --example wie-cli 2>&1 | tee -a logs/test-windows-build.log
+      - name: Windows reads patched ISO + USB stick on virtual disk
+        shell: pwsh
+        run: |
+          & tools/test/usb_windows.ps1 *>&1 | Tee-Object -FilePath logs/usb-windows.log
+          if (-not (Select-String -Path logs/usb-windows.log -Pattern 'ALL WINDOWS TESTS PASSED' -Quiet)) { exit 1 }
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-test-windows
           path: logs/
           retention-days: 5
 
@@ -108,6 +142,8 @@ jobs:
           "../$SRC" --appimage-extract >/dev/null
           rm -fv squashfs-root/usr/lib/libwayland-*.so* squashfs-root/usr/lib/x86_64-linux-gnu/libwayland-*.so* 2>/dev/null || true
           if find squashfs-root -name 'libwayland-*.so*' | grep -q .; then echo "libwayland still bundled"; exit 1; fi
+          # USB stick tools: static mkfs.fat + wimlib-imagex (for install.wim > 4 GB)
+          bash ../tools/bundle_usb_tools.sh squashfs-root/usr/bin
           wget -q -O appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
           chmod +x appimagetool
           ARCH=x86_64 ./appimagetool --appimage-extract-and-run squashfs-root "../out/Windows-ISO-Editor_${V}_x86_64.AppImage"
@@ -154,7 +190,7 @@ jobs:
           retention-days: 5
 
   build-windows:
-    needs: [meta, test]
+    needs: [meta, test, test-windows]
     if: needs.meta.outputs.build == 'true'
     runs-on: windows-latest
     timeout-minutes: 45
@@ -217,7 +253,7 @@ jobs:
 
   release:
     if: needs.meta.outputs.release == 'true'
-    needs: [meta, build-linux, build-windows]
+    needs: [meta, test, test-windows, build-linux, build-windows]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -247,7 +283,7 @@ jobs:
   # so the state can be checked with plain git.
   report:
     if: always()
-    needs: [meta, test, build-linux, build-windows, release]
+    needs: [meta, test, test-windows, build-linux, build-windows, release]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/download-artifact@v4
@@ -268,6 +304,7 @@ jobs:
           sha=${GITHUB_SHA}
           run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           test=${{ needs.test.result }}
+          test-windows=${{ needs.test-windows.result }}
           build-linux=${{ needs.build-linux.result }}
           build-windows=${{ needs.build-windows.result }}
           release=${{ needs.release.result }}

@@ -1,4 +1,6 @@
 pub mod catalog;
+pub mod crc32;
+pub mod usb;
 pub mod udf;
 pub mod unattend;
 

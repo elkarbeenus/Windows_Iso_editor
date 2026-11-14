@@ -139,6 +139,216 @@ fn open_folder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+// ------------------------------------------------------------------ USB sticks
+
+#[derive(Serialize)]
+struct DiskDto {
+    id: String,
+    name: String,
+    size: u64,
+    removable: bool,
+    usb: bool,
+    mounts: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct ImageDto {
+    path: String,
+    file_name: String,
+    mode: String,
+    kind: String,
+    label: String,
+    size: u64,
+    compressed: Option<String>,
+    needed: u64,
+}
+
+#[tauri::command]
+async fn list_usb() -> Result<Vec<DiskDto>, String> {
+    tauri::async_runtime::spawn_blocking(|| -> Result<Vec<DiskDto>, String> {
+        Ok(wie_core::usb::list_disks()?
+            .into_iter()
+            .map(|d| DiskDto { id: d.id, name: d.name, size: d.size, removable: d.removable, usb: d.usb, mounts: d.mounts })
+            .collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn detect_image(path: String) -> Result<ImageDto, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<ImageDto, String> {
+        let p = PathBuf::from(&path);
+        let i = wie_core::usb::detect_image(&p)?;
+        Ok(ImageDto {
+            file_name: p.file_name().and_then(|s| s.to_str()).unwrap_or_default().to_string(),
+            path,
+            mode: if i.mode == wie_core::usb::Mode::Windows { "windows".into() } else { "raw".into() },
+            kind: i.kind,
+            label: i.label,
+            size: i.size,
+            compressed: i.compressed,
+            needed: i.needed,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn worker_args(image: &str, device: &str, mode: &str, lang: &str) -> Vec<String> {
+    vec![
+        "--usb-worker".into(),
+        "--image".into(),
+        image.into(),
+        "--device".into(),
+        device.into(),
+        "--mode".into(),
+        mode.into(),
+        "--lang".into(),
+        lang.into(),
+    ]
+}
+
+/// Parses one JSON line of the worker and forwards it to the UI.
+/// Returns Some(Ok/Err) for the final event.
+fn handle_line(window: &tauri::Window, line: &str) -> Option<Result<String, String>> {
+    let v: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    let _ = window.emit("usb-event", v.clone());
+    match v.get("t").and_then(|t| t.as_str()) {
+        Some("done") => Some(Ok(v.get("msg").and_then(|m| m.as_str()).unwrap_or_default().to_string())),
+        Some("error") => Some(Err(v.get("msg").and_then(|m| m.as_str()).unwrap_or_default().to_string())),
+        _ => None,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_worker(window: &tauri::Window, args: Vec<String>, de: bool) -> Result<String, String> {
+    use std::io::BufRead;
+    use std::process::{Command, Stdio};
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let is_root = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| s.lines().find(|l| l.starts_with("Uid:")).map(|l| l.split_whitespace().nth(1) == Some("0")))
+        .unwrap_or(false);
+    let mut cmd = if is_root {
+        let mut c = Command::new(&exe);
+        c.args(&args);
+        c
+    } else {
+        let pkexec = wie_core::usb::find_tool("pkexec").ok_or_else(|| {
+            if de { "pkexec wurde nicht gefunden – Root-Rechte können nicht angefordert werden.".to_string() } else { "pkexec not found – cannot request root rights.".to_string() }
+        })?;
+        let mut c = Command::new(pkexec);
+        match std::env::var_os("APPIMAGE") {
+            // root cannot enter the user's FUSE mount of the AppImage -> let it extract itself
+            Some(ai) => {
+                c.arg("/usr/bin/env").arg("APPIMAGE_EXTRACT_AND_RUN=1").arg(ai);
+            }
+            None => {
+                c.arg(&exe);
+            }
+        }
+        c.args(&args);
+        c
+    };
+    // AppImage runtime variables must not leak into the root process
+    for v in ["LD_LIBRARY_PATH", "LD_PRELOAD", "APPDIR", "APPIMAGE", "OWD", "ARGV0"] {
+        cmd.env_remove(v);
+    }
+    let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| e.to_string())?;
+    let stdout = child.stdout.take().unwrap();
+    let mut result: Option<Result<String, String>> = None;
+    for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+        if let Some(r) = handle_line(window, &line) {
+            result = Some(r);
+        }
+    }
+    let status = child.wait().map_err(|e| e.to_string())?;
+    let mut errtxt = String::new();
+    if let Some(mut e) = child.stderr.take() {
+        use std::io::Read;
+        let _ = e.read_to_string(&mut errtxt);
+    }
+    match result {
+        Some(r) => r,
+        None if status.code() == Some(126) || status.code() == Some(127) => Err(if de {
+            "Abgebrochen: Root-Rechte wurden nicht erteilt. (Unter SteamOS muss für den Benutzer „deck“ ein Passwort gesetzt sein – im Terminal: passwd)".into()
+        } else {
+            "Cancelled: root rights were not granted. (On SteamOS the user “deck” needs a password – in a terminal: passwd)".into()
+        }),
+        None => Err(format!("Worker: {status} {}", errtxt.lines().rev().take(6).collect::<Vec<_>>().join(" / "))),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_worker(window: &tauri::Window, mut args: Vec<String>, de: bool) -> Result<String, String> {
+    use std::io::{Seek, SeekFrom};
+    use std::os::windows::process::CommandExt;
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let events = std::env::temp_dir().join(format!("wie-usb-{}.jsonl", std::process::id()));
+    let _ = std::fs::remove_file(&events);
+    args.push("--events".into());
+    args.push(events.to_string_lossy().to_string());
+    let arglist = args.iter().map(|a| format!("\"{}\"", a.replace('"', ""))).collect::<Vec<_>>().join(" ");
+    let q = |s: &str| format!("'{}'", s.replace('\'', "''"));
+    let script = format!(
+        "try {{ $p = Start-Process -FilePath {} -ArgumentList {} -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $p.ExitCode }} catch {{ exit 1223 }}",
+        q(&exe.to_string_lossy()),
+        q(&arglist)
+    );
+    let mut child = std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", &script])
+        .creation_flags(0x0800_0000)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    let mut result: Option<Result<String, String>> = None;
+    let mut pos = 0u64;
+    let mut pending = String::new();
+    loop {
+        let finished = child.try_wait().map_err(|e| e.to_string())?;
+        if let Ok(mut f) = std::fs::File::open(&events) {
+            if f.seek(SeekFrom::Start(pos)).is_ok() {
+                let mut chunk = String::new();
+                use std::io::Read;
+                if let Ok(n) = f.read_to_string(&mut chunk) {
+                    pos += n as u64;
+                    pending.push_str(&chunk);
+                    while let Some(i) = pending.find('\n') {
+                        let line: String = pending.drain(..=i).collect();
+                        if let Some(r) = handle_line(window, &line) {
+                            result = Some(r);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(st) = finished {
+            let _ = std::fs::remove_file(&events);
+            return match result {
+                Some(r) => r,
+                None if st.code() == Some(1223) => Err(if de { "Abgebrochen: Administratorrechte wurden nicht erteilt.".into() } else { "Cancelled: administrator rights were not granted.".into() }),
+                None => Err(format!("Worker exit {st}")),
+            };
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+fn spawn_worker(_window: &tauri::Window, _args: Vec<String>, _de: bool) -> Result<String, String> {
+    Err("unsupported".into())
+}
+
+#[tauri::command]
+async fn write_usb(window: tauri::Window, image: String, device: String, mode: String, lang: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<String, String> {
+        let args = worker_args(&image, &device, if mode == "windows" { "windows" } else { "raw" }, &lang);
+        spawn_worker(&window, args, lang != "en")
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Marker file: exists while a start is "unconfirmed". If the UI never reports
 /// back (grey window), the next start uses software rendering.
 fn start_marker() -> Option<PathBuf> {
@@ -161,6 +371,12 @@ fn ui_ready() {
 }
 
 fn main() {
+    // elevated helper process for writing USB sticks (no window)
+    let argv: Vec<String> = std::env::args().collect();
+    if argv.get(1).map(|a| a == "--usb-worker").unwrap_or(false) {
+        std::process::exit(wie_core::usb::worker_main(&argv[2..]));
+    }
+
     #[cfg(target_os = "linux")]
     {
         // Stable rendering on SteamOS / newer WebKitGTK (prevents grey or empty windows)
@@ -186,7 +402,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![app_version, get_catalog, inspect_iso, build_iso, save_xml, preview_script, open_folder, ui_ready])
+        .invoke_handler(tauri::generate_handler![app_version, get_catalog, inspect_iso, build_iso, save_xml, preview_script, open_folder, ui_ready, list_usb, detect_image, write_usb])
         .run(tauri::generate_context!())
         .expect("error while running Windows ISO Editor");
 }

@@ -133,6 +133,13 @@ struct Extent {
 }
 
 #[derive(Clone, Debug)]
+pub struct WalkEntry {
+    pub path: String,
+    pub is_dir: bool,
+    pub size: u64,
+}
+
+#[derive(Clone, Debug)]
 pub struct DirEntry {
     pub name: String,
     pub is_dir: bool,
@@ -528,6 +535,68 @@ impl Udf {
             }
         }
         Ok(out)
+    }
+
+    /// All files and folders (recursive), paths with '/' separators, sorted.
+    pub fn walk(&mut self) -> Result<Vec<WalkEntry>> {
+        let mut out = Vec::new();
+        let root = self.root_icb;
+        self.walk_dir(root, String::new(), &mut out, 0)?;
+        Ok(out)
+    }
+
+    fn walk_dir(&mut self, icb: LongAd, prefix: String, out: &mut Vec<WalkEntry>, depth: u32) -> Result<()> {
+        if depth > 32 {
+            return err("UDF: Ordner zu tief verschachtelt");
+        }
+        let (_, ents) = self.dir_entries(icb)?;
+        for e in ents.into_iter().filter(|e| !e.is_parent && e.characteristics & 0x04 == 0) {
+            let path = if prefix.is_empty() { e.name.clone() } else { format!("{prefix}/{}", e.name) };
+            if e.is_dir {
+                out.push(WalkEntry { path: path.clone(), is_dir: true, size: 0 });
+                self.walk_dir(e.icb, path, out, depth + 1)?;
+            } else {
+                let n = self.read_node(e.icb.lbn)?;
+                out.push(WalkEntry { path, is_dir: false, size: n.info_len });
+            }
+        }
+        Ok(())
+    }
+
+    /// Streams a file into `w` (4 MiB chunks). `cb` gets the bytes written so far.
+    pub fn copy_to(&mut self, path: &str, w: &mut dyn Write, cb: &mut dyn FnMut(u64) -> Result<()>) -> Result<u64> {
+        let icb = self.resolve(path)?;
+        let node = self.read_node(icb.lbn)?;
+        if let Some(d) = &node.inline {
+            let n = (node.info_len as usize).min(d.len());
+            w.write_all(&d[..n])?;
+            cb(n as u64)?;
+            return Ok(n as u64);
+        }
+        let mut done = 0u64;
+        let mut buf = vec![0u8; 4 * 1024 * 1024];
+        for e in &node.extents {
+            if done >= node.info_len {
+                break;
+            }
+            let mut left = (e.len as u64).min(node.info_len - done);
+            let mut pos = (self.part_start as u64 + e.lbn as u64) * SECTOR;
+            while left > 0 {
+                let n = left.min(buf.len() as u64) as usize;
+                if e.recorded {
+                    self.f.seek(SeekFrom::Start(pos))?;
+                    self.f.read_exact(&mut buf[..n])?;
+                } else {
+                    buf[..n].fill(0);
+                }
+                w.write_all(&buf[..n])?;
+                done += n as u64;
+                pos += n as u64;
+                left -= n as u64;
+                cb(done)?;
+            }
+        }
+        Ok(done)
     }
 
     fn next_unique_id(&mut self, root_entries: &[DirEntry]) -> Result<u64> {

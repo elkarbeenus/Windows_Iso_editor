@@ -8,7 +8,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">
+    <div class="brand" id="brand" title="Start">
       <img src="icon.png" alt="" class="logo" />
       <div>
         <div class="brand-name">Windows ISO Editor</div>
@@ -23,14 +23,84 @@
       <button class="step" data-step="3"><span class="num">3</span><span data-i18n="step3"></span></button>
     </nav>
     <div class="top-actions">
+      <button class="chip-btn hidden" id="homeBtn"></button>
       <button class="chip-btn" id="langBtn" title="Sprache / Language">DE</button>
       <button class="icon-btn" id="infoBtn" title="Info"></button>
     </div>
   </header>
 
   <main>
+    <!-- HOME: choose what to do -->
+    <section class="page" id="pageHome">
+      <div class="hero">
+        <h1 data-i18n="homeH1"></h1>
+        <p class="lead" data-i18n="homeLead"></p>
+      </div>
+      <div class="modes">
+        <button class="mode-card" id="modeIso">
+          <div class="mode-ico" data-ico="sparkles"></div>
+          <div class="mode-title" data-i18n="modeIsoT"></div>
+          <div class="mode-desc" data-i18n="modeIsoD"></div>
+          <div class="mode-tags"><span>Copilot</span><span>Recall</span><span data-i18n="tagAds"></span><span>Apps</span></div>
+          <div class="mode-go" data-i18n="modeGo"></div>
+        </button>
+        <button class="mode-card" id="modeUsb">
+          <div class="mode-ico" data-ico="usb"></div>
+          <div class="mode-title" data-i18n="modeUsbT"></div>
+          <div class="mode-desc" data-i18n="modeUsbD"></div>
+          <div class="mode-tags"><span>Windows 11</span><span>SteamOS</span><span>Linux</span></div>
+          <div class="mode-go" data-i18n="modeGo"></div>
+        </button>
+      </div>
+      <div class="how">
+        <div class="how-item"><div class="how-ico" data-ico="shield-check"></div><div><b data-i18n="how1t"></b><p data-i18n="how1"></p></div></div>
+        <div class="how-item"><div class="how-ico" data-ico="check"></div><div><b data-i18n="how4t"></b><p data-i18n="how4"></p></div></div>
+        <div class="how-item"><div class="how-ico" data-ico="gamepad"></div><div><b data-i18n="how3t"></b><p data-i18n="how3"></p></div></div>
+      </div>
+    </section>
+
+    <!-- USB STICK -->
+    <section class="page hidden" id="pageUsb">
+      <div class="section-head">
+        <div>
+          <h2 data-i18n="usbTitle"></h2>
+          <p class="muted" data-i18n="usbSub"></p>
+        </div>
+      </div>
+      <div class="usb-grid">
+        <div class="card">
+          <div class="card-title"><span class="num-badge">1</span><span data-i18n="usbImage"></span></div>
+          <div class="drop small" id="usbDrop" tabindex="0">
+            <div class="drop-icon" data-ico="upload"></div>
+            <div class="drop-title" data-i18n="usbPick"></div>
+            <div class="drop-sub" data-i18n="usbPickSub"></div>
+          </div>
+          <div id="usbImage"></div>
+        </div>
+        <div class="card">
+          <div class="card-title"><span class="num-badge">2</span><span data-i18n="usbStick"></span>
+            <button class="mini right" id="usbRefresh"></button></div>
+          <div id="usbDisks"></div>
+        </div>
+      </div>
+      <div class="card usb-go">
+        <div id="usbAction">
+          <div class="alert warn" id="usbWarn"></div>
+          <button class="btn primary big" id="usbBtn"></button>
+          <p class="hint center" id="usbHint"></p>
+        </div>
+        <div id="usbProgress" class="hidden">
+          <div class="usb-stage" id="usbStage"></div>
+          <div class="bar"><div class="bar-fill" id="usbBar"></div></div>
+          <div class="bar-label" id="usbPct"></div>
+          <details class="log"><summary data-i18n="details"></summary><pre id="usbLog"></pre></details>
+        </div>
+        <div id="usbResult" class="hidden"></div>
+      </div>
+    </section>
+
     <!-- STEP 1 -->
-    <section class="page" id="page1">
+    <section class="page hidden" id="page1">
       <div class="hero">
         <h1 data-i18n="h1"></h1>
         <p class="lead" data-i18n="lead"></p>

@@ -167,6 +167,9 @@ def main():
     out = sys.argv[1]
     long_ad = '--long-ad' in sys.argv
     trailing = '--trailing-avdp' in sys.argv
+    real_wim = None
+    if '--wim' in sys.argv:
+        real_wim = open(sys.argv[sys.argv.index('--wim') + 1], 'rb').read()
     rnd = random.Random(42)
     rb = lambda n: bytes(rnd.getrandbits(8) for _ in range(n))
     tree = {
@@ -176,7 +179,7 @@ def main():
         'bootmgr.efi': rb(7000),
         'efi': {'boot': {'bootx64.efi': rb(5000)}, 'microsoft': {'boot': {'efisys.bin': rb(S * 3)}}},
         'setup.exe': rb(20000),
-        'sources': {'boot.wim': rb(50000), 'install.wim': wim([('Windows 11 Home', 9, '26100'), ('Windows 11 Pro', 9, '26100')]), 'setup.exe': rb(3000)},
+        'sources': {'boot.wim': rb(50000), 'install.wim': real_wim or wim([('Windows 11 Home', 9, '26100'), ('Windows 11 Pro', 9, '26100')]), 'setup.exe': rb(3000)},
         'support': {'readme.txt': b'hello'},
     }
     img = Img(long_ad)

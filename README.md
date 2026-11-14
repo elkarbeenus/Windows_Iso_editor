@@ -2,7 +2,8 @@
 
 <h1 align="center">Windows ISO Editor</h1>
 <p align="center"><b>Debloat Windows 11 installation ISOs – safely.</b><br>
-Remove Copilot, Recall, Cortana, ads and bloatware before Windows is even installed.<br>
+Remove Copilot, Recall, Cortana, ads and bloatware before Windows is even installed –<br>
+and write the result (or any Windows / SteamOS / Linux image) to a bootable USB stick.<br>
 Linux AppImage (SteamOS) · Windows exe · x64 & ARM64 ISOs</p>
 <p align="center"><i>Created by Dominic Lesina × Claude</i></p>
 
@@ -14,7 +15,19 @@ Linux AppImage (SteamOS) · Windows exe · x64 & ARM64 ISOs</p>
 2. **Customize**: start with *Gentle*, *Recommended* or *Maximum* and toggle cards. Every card explains what it does, and *“What exactly happens?”* shows the exact registry keys and packages.
 3. **Create**: the app writes a new ISO next to the original and checks the result.
 
-Then create a boot stick (e.g. with [WinUSB-SteamOS](https://github.com/elkarbeenus/WinUSB-SteamOS), Rufus or Ventoy) and install Windows as usual.
+Then click **“Write to USB stick now”** (or use Rufus/Ventoy) and install Windows as usual.
+
+## Bootable USB sticks
+
+The second mode on the start page creates boot sticks from any image:
+
+| Image | How it is written |
+|---|---|
+| Windows 10/11 ISO (x64, ARM64) | MBR + FAT32 (UEFI), like Microsoft's Media Creation Tool. `install.wim` > 4 GB is split into `install.swm` (Linux: bundled wimlib, Windows: DISM) |
+| Linux hybrid ISOs | 1:1 (like dd / Etcher) |
+| SteamOS recovery `.img` / `.img.bz2` | 1:1, decompressed on the fly (Linux also `.gz`, `.xz`, `.zst`, `.zip`) |
+
+Everything written is read back and compared, so faulty or fake sticks are caught right away. Only USB/removable drives are offered, never the system drive. Root rights come from pkexec on Linux/SteamOS (the user needs a password, `passwd`) and from a UAC prompt on Windows.
 
 ## Why the installation can't break
 
@@ -24,6 +37,8 @@ Unlike tools that cut components out of `install.wim`, Windows ISO Editor **does
 - The answer file contains **no disk, product key, edition or account settings**. Setup asks you everything exactly as it would without the file.
 - Clean-up runs inside the freshly installed Windows (specialize pass, as SYSTEM). **Every step is isolated** (`try/catch`, logged), and the script always exits successfully, so a failing step can never stop setup.
 - A **hard-coded protection list** in the script refuses to remove Xbox / Game Bar / Gaming Services, Microsoft Store & winget, Windows Security, runtimes (.NET, VC++, WebView2), codecs and core apps. Bluetooth, drivers, Windows Update and Edge are never touched (Edge only gets its ads switched off).
+
+CI proves on every build that **Windows itself** (Mount-DiskImage) and the **Linux kernel** UDF driver read the patched ISO file-for-file identical to the original.
 
 Log files: `C:\Windows\Setup\Scripts\WinIsoEditor\specialize.log`, plus `%TEMP%\WinIsoEditor-firstlogon.log` for the first user.
 

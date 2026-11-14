@@ -1,6 +1,6 @@
 [package]
 name = "windows-iso-editor"
-version = "0.0.2"
+version = "0.0.3"
 description = "Windows ISO Editor - debloat Windows 11 installation ISOs safely"
 authors = ["Dominic Lesina", "Claude"]
 license = "MIT"

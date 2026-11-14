@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.0.3
+
+**Neu: Bootfähige USB-Sticks direkt in der App** – zwei Programme in einem
+- Neue Startseite: **„Windows-ISO anpassen“** oder **„Bootfähigen USB-Stick erstellen“**
+- Nach dem Erstellen einer ISO: Button **„Direkt auf USB-Stick schreiben“**
+- **Windows 10/11** (x64 & ARM64): Stick wie beim Media Creation Tool (MBR, FAT32, UEFI); eine `install.wim` über 4 GB wird automatisch aufgeteilt (Linux: wimlib, Windows: DISM)
+- **SteamOS-Recovery** (`.img`, `.img.bz2`) und **Linux-Distributionen** (Hybrid-ISOs) werden 1:1 geschrieben; unter Linux auch `.gz`, `.xz`, `.zst`, `.zip`
+- **Jeder Stick wird geprüft:** Nach dem Schreiben wird alles vom Stick zurückgelesen und verglichen; defekte oder gefälschte Sticks fallen sofort auf
+- Sicherheitssperren: Nur USB-/Wechseldatenträger, niemals das Systemlaufwerk; vor dem Löschen kommt eine Bestätigung
+- SteamOS/Linux: Root-Rechte per Passwortabfrage (pkexec); Windows: einmalige Administrator-Abfrage
+
+**Installationsfehler beim Partitionieren untersucht**
+- Die Antwortdatei enthält keine Laufwerkseinstellungen. Neue automatische Tests belegen: Windows **und** der Linux-Kernel lesen die bearbeitete ISO Datei für Datei identisch zum Original
+- Tipp bei „Es konnte keine neue Partition erstellt werden“: im Setup Shift+F10 → `diskpart` → `select disk 0` → `clean` → `convert gpt`, dann den nicht zugewiesenen Speicher wählen und direkt „Weiter“
+
+**Downloads**
+- `Windows-ISO-Editor_0.0.3_x86_64.AppImage` – Linux / SteamOS
+- `Windows-ISO-Editor_0.0.3_x64-setup.exe` – Windows-Installer
+- `Windows-ISO-Editor_0.0.3_x64-portable.exe` – Windows ohne Installation
+
 ## v0.0.2
 
 **Behoben**
