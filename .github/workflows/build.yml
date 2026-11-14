@@ -126,7 +126,7 @@ jobs:
           for i in $(seq 1 18); do
             sleep 5
             import -window root shot.png 2>/dev/null || continue
-            set -- $(convert shot.png -format '%[fx:int(255*p{640,170}.r)] %[fx:int(255*p{640,170}.g)] %[fx:int(255*p{640,170}.b)]' info:)
+            set -- $(convert shot.png -format '%[fx:int(255*p{55,450}.r)] %[fx:int(255*p{55,450}.g)] %[fx:int(255*p{55,450}.b)]' info:)
             echo "t=$((i*5))s pixel: $1 $2 $3"
             if [ "$1" -lt 40 ] && [ "$3" -gt $(( $1 + 5 )) ]; then echo OK > smoke.result; break; fi
           done
