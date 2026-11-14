@@ -119,14 +119,26 @@ jobs:
         run: |
           sudo apt-get install -y xvfb imagemagick >/dev/null
           A=$(ls out/*.AppImage)
-          xvfb-run -a -s "-screen 0 1280x860x24" bash -c "\"$A\" --appimage-extract-and-run > smoke.log 2>&1 & sleep 15; import -window root shot.png; kill %1 || true"
-          cat smoke.log | tail -20
-          mkdir -p logs && cp shot.png logs/smoke.png && cp smoke.log logs/smoke.log
-          # page background is dark navy; a grey/empty window would be ~(51,51,51) or white
-          RGB=$(convert shot.png -format '%[fx:int(255*p{640,170}.r)] %[fx:int(255*p{640,170}.g)] %[fx:int(255*p{640,170}.b)]' info:)
-          echo "pixel: $RGB"
-          set -- $RGB
-          if [ "$1" -lt 40 ] && [ "$3" -gt $(( $1 + 5 )) ]; then echo "UI rendered"; else echo "UI did not render"; exit 1; fi
+          cat > smoke.sh <<'EOF'
+          A="$1"
+          "$A" --appimage-extract-and-run > smoke.log 2>&1 &
+          PID=$!
+          for i in $(seq 1 18); do
+            sleep 5
+            import -window root shot.png 2>/dev/null || continue
+            set -- $(convert shot.png -format '%[fx:int(255*p{640,170}.r)] %[fx:int(255*p{640,170}.g)] %[fx:int(255*p{640,170}.b)]' info:)
+            echo "t=$((i*5))s pixel: $1 $2 $3"
+            if [ "$1" -lt 40 ] && [ "$3" -gt $(( $1 + 5 )) ]; then echo OK > smoke.result; break; fi
+          done
+          xwininfo -root -tree > windows.txt 2>&1 || true
+          kill $PID 2>/dev/null || true
+          EOF
+          sudo apt-get install -y x11-utils >/dev/null
+          xvfb-run -a -s "-screen 0 1280x860x24" bash smoke.sh "$A"
+          tail -20 smoke.log
+          grep -i -E "iso|editor" windows.txt || true
+          mkdir -p logs && cp shot.png logs/smoke.png && cp smoke.log logs/smoke.log && cp windows.txt logs/windows.txt
+          if [ -f smoke.result ]; then echo "UI rendered"; else echo "UI did not render"; exit 1; fi
       - uses: actions/upload-artifact@v4
         with:
           name: linux

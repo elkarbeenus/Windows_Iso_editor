@@ -47,7 +47,7 @@ button { font: inherit; color: inherit; }
 .steps { flex: 1; display: flex; align-items: center; justify-content: center; gap: 10px; }
 .step {
   display: flex; align-items: center; gap: 9px; border: 0; background: none; cursor: pointer;
-  color: var(--muted); padding: 6px 10px; border-radius: 999px; font-weight: 600; font-size: 13.5px;
+  color: var(--muted); padding: 6px 10px; border-radius: 999px; font-weight: 600; font-size: 13.5px; white-space: nowrap;
 }
 .step:disabled { cursor: default; opacity: .55; }
 .step .num {
