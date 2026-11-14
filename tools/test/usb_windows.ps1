@@ -28,7 +28,51 @@ $rnd2 = New-Object byte[] 1500000; (New-Object Random 9).NextBytes($rnd2); [IO.F
 dism.exe /Capture-Image /ImageFile:"$t\test.wim" /CaptureDir:"$t\wimsrc" /Name:Test /Compress:none | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "dism capture failed" }
 
-python "$root\tools\test\gen_udf.py" "$t\in.iso" --wim "$t\test.wim"
+# Fixture ISO authored by Windows itself (IMAPI2, UDF 1.02) with a Windows-setup-like layout
+$src = "$t\isosrc"
+foreach ($d in 'boot', 'efi\boot', 'efi\microsoft\boot', 'sources', 'support') { New-Item -ItemType Directory -Force "$src\$d" | Out-Null }
+function RandFile($path, $size, $seed) { $b = New-Object byte[] $size; (New-Object Random $seed).NextBytes($b); [IO.File]::WriteAllBytes($path, $b) }
+RandFile "$src\bootmgr" 9000 1; RandFile "$src\bootmgr.efi" 7000 2; RandFile "$src\setup.exe" 20000 3
+RandFile "$src\boot\etfsboot.com" 4096 4; RandFile "$src\boot\bcd" 12000 5
+RandFile "$src\efi\boot\bootx64.efi" 5000 6; RandFile "$src\efi\microsoft\boot\efisys.bin" 6144 7
+RandFile "$src\sources\boot.wim" 50000 8; RandFile "$src\sources\setup.exe" 3000 9
+Copy-Item "$t\test.wim" "$src\sources\install.wim"
+Set-Content "$src\autorun.inf" "[AutoRun]`r`nopen=setup.exe" -Encoding ascii
+Set-Content "$src\support\readme.txt" "hello" -Encoding ascii
+
+Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Runtime.InteropServices.ComTypes;
+public static class IsoWriter {
+  public static void Save(object comStream, string path) {
+    IStream s = (IStream)comStream;
+    byte[] buf = new byte[1024 * 1024];
+    IntPtr read = System.Runtime.InteropServices.Marshal.AllocHGlobal(sizeof(int));
+    try {
+      using (FileStream fs = File.Create(path)) {
+        while (true) {
+          s.Read(buf, buf.Length, read);
+          int n = System.Runtime.InteropServices.Marshal.ReadInt32(read);
+          if (n <= 0) break;
+          fs.Write(buf, 0, n);
+        }
+      }
+    } finally { System.Runtime.InteropServices.Marshal.FreeHGlobal(read); }
+  }
+}
+'@
+$fsi = New-Object -ComObject IMAPI2FS.MsftFileSystemImage
+$fsi.ChooseImageDefaultsForMediaType(13)   # DVD+R DL sized media
+$fsi.FileSystemsToCreate = 4               # UDF
+$fsi.UDFRevision = 0x102                   # UDF 1.02 like Microsoft's Windows ISOs
+$fsi.VolumeName = 'WIE_TEST_X64'
+$fsi.Root.AddTree($src, $false)
+$img = $fsi.CreateResultImage()
+[IsoWriter]::Save($img.ImageStream, "$t\in.iso")
+"fixture ISO: $((Get-Item "$t\in.iso").Length) bytes"
+& $cli inspect "$t\in.iso"
+if ($LASTEXITCODE -ne 0) { throw "inspect of IMAPI ISO failed" }
 & $cli build "$t\in.iso" "$t\out.iso" recommended
 if ($LASTEXITCODE -ne 0) { throw "build failed" }
 & $cli xml recommended | Set-Content -NoNewline -Encoding ascii "$t\expected.xml"
