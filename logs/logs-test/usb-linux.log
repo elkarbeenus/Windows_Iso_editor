@@ -1,0 +1,29 @@
+== workdir /tmp/tmp.x9BAa6VDGx
+copy 5226496/5226496
+patch 0/1
+patch 1/1
+verify 0/1
+verify 1/1
+OK xml=14740 verified=8
+OK kernel UDF: all 12 original files identical, autounattend.xml present
+== loop /dev/loop5
+{"t":"progress","pct":98.93,"stage":"Verifying stick"}
+{"t":"progress","pct":100.00,"stage":"Done! The stick is bootable and verified – you can remove it now."}
+{"t":"done","msg":"Done! The stick is bootable and verified – you can remove it now."}
+OK stick (no split): identical to ISO
+{"t":"progress","pct":99.00,"stage":"Verifying stick"}
+{"t":"progress","pct":100.00,"stage":"Done! The stick is bootable and verified – you can remove it now."}
+{"t":"done","msg":"Done! The stick is bootable and verified – you can remove it now."}
+total 4472
+drwxr-xr-x 2 root root    4096 Nov 14 22:43 .
+drwxr-xr-x 6 root root    4096 Jan  1  1970 ..
+-rwxr-xr-x 1 root root   50000 Nov 14 22:43 boot.wim
+-rwxr-xr-x 1 root root    1656 Nov 14 22:43 install.swm
+-rwxr-xr-x 1 root root 3001040 Nov 14 22:43 install2.swm
+-rwxr-xr-x 1 root root    1046 Nov 14 22:43 install3.swm
+-rwxr-xr-x 1 root root 1501040 Nov 14 22:43 install4.swm
+-rwxr-xr-x 1 root root    3000 Nov 14 22:43 setup.exe
+OK stick (split): install.swm parts apply to the original content
+OK raw + bz2
+OK safety check
+ALL LINUX USB TESTS PASSED

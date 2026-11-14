@@ -1,0 +1,16 @@
+[1m[92m    Updating[0m crates.io index
+[1m[92m     Locking[0m 422 packages to highest compatible versions
+[1m[92m      Adding[0m generic-array v0.14.7 [1m[33m(available: v0.14.9)[0m
+[1m[92m      Adding[0m tauri v1.8.3 [1m[33m(available: v2.12.5)[0m
+[1m[92m      Adding[0m tauri-build v1.5.6 [1m[33m(available: v2.7.4)[0m
+[1m[92m Downloading[0m crates ...
+[1m[92m  Downloaded[0m jiff-core v0.1.6
+[1m[92m  Downloaded[0m jiff v0.2.44
+[1m[92m   Compiling[0m windows-iso-editor v0.0.4 (/home/runner/work/Windows_Iso_editor/Windows_Iso_editor/src-tauri)
+[1m[92m   Compiling[0m wie-core v0.0.1 (/home/runner/work/Windows_Iso_editor/Windows_Iso_editor/core)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 44.41s
+        Warn Signing, by default, is only supported on Windows hosts, but you can specify a custom signing command in `bundler > windows > sign_command`, for now, skipping signing the installer...
+    Bundling windows-iso-editor_0.0.4_amd64.AppImage (/home/runner/work/Windows_Iso_editor/Windows_Iso_editor/src-tauri/target/release/bundle/appimage/windows-iso-editor_0.0.4_amd64.AppImage)
+    Finished 1 bundle at:
+        /home/runner/work/Windows_Iso_editor/Windows_Iso_editor/src-tauri/target/release/bundle/appimage/windows-iso-editor_0.0.4_amd64.AppImage
+

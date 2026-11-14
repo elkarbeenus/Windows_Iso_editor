@@ -1,0 +1,5 @@
+PWD=/home/runner/work/Windows_Iso_editor/Windows_Iso_editor
+SHLVL=0
+PATH=/tmp/appimage_extracted_f9c1c12ddd21a5443606ccdcb9c0ba5d/usr/bin/:/tmp/appimage_extracted_f9c1c12ddd21a5443606ccdcb9c0ba5d/usr/sbin/:/tmp/appimage_extracted_f9c1c12ddd21a5443606ccdcb9c0ba5d/usr/games/:/tmp/appimage_extracted_f9c1c12ddd21a5443606ccdcb9c0ba5d/bin/:/tmp/appimage_extracted_f9c1c12ddd21a5443606ccdcb9c0ba5d/sbin/:/usr/sbin:/usr/bin:/sbin:/bin
+PYTHONDONTWRITEBYTECODE=1
+mount --version: mount from util-linux 2.37.2 (libmount 2.37.2: selinux, smack, btrfs, verity, namespaces, assert, debug) 

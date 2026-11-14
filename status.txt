@@ -1,0 +1,9 @@
+ref=main
+version=0.0.4
+sha=9355a84d68e9e6fca7cd78081e9cef62eb1f9123
+run=https://github.com/elkarbeenus/Windows_Iso_editor/actions/runs/43649504889
+test=success
+test-windows=skipped (paused)
+build-linux=success
+build-windows=skipped
+release=success

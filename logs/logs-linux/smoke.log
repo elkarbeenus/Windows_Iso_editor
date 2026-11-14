@@ -1,0 +1,4 @@
+
+(windows-iso-editor:13605): dbind-WARNING **: 22:47:09.680: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files
+
+** (windows-iso-editor:13605): WARNING **: 22:47:34.732: webkit_settings_set_enable_offline_web_application_cache is deprecated and does nothing.

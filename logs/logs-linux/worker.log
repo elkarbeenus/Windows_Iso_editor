@@ -1,0 +1,22 @@
+{"t":"progress","pct":1.00,"stage":"Prüfe Stick"}
+{"t":"log","msg":"Schreibe Partitionstabelle (MBR, FAT32)"}
+{"t":"progress","pct":2.00,"stage":"Bereite Stick vor"}
+{"t":"log","msg":"Formatiere FAT32"}
+{"t":"progress","pct":5.00,"stage":"Kopiere Dateien"}
+{"t":"progress","pct":5.03,"stage":"Kopiere Dateien"}
+{"t":"log","msg":"install.wim ist größer als 4 GB → wird in install.swm-Teile aufgeteilt"}
+{"t":"progress","pct":7.38,"stage":"Teile install.wim auf"}
+{"t":"progress","pct":80.00,"stage":"Schreibe Daten auf den Stick"}
+{"t":"progress","pct":80.00,"stage":"Prüfe Stick"}
+{"t":"progress","pct":80.60,"stage":"Prüfe Stick"}
+{"t":"progress","pct":82.34,"stage":"Prüfe Stick"}
+{"t":"progress","pct":83.64,"stage":"Prüfe Stick"}
+{"t":"progress","pct":84.66,"stage":"Prüfe Stick"}
+{"t":"progress","pct":85.38,"stage":"Prüfe Stick"}
+{"t":"progress","pct":86.28,"stage":"Prüfe Stick"}
+{"t":"progress","pct":89.18,"stage":"Prüfe Stick"}
+{"t":"progress","pct":96.43,"stage":"Prüfe Stick"}
+{"t":"progress","pct":96.86,"stage":"Prüfe Stick"}
+{"t":"progress","pct":99.00,"stage":"Prüfe Stick"}
+{"t":"progress","pct":100.00,"stage":"Fertig! Der Stick ist bootfähig und geprüft – du kannst ihn jetzt abziehen."}
+{"t":"done","msg":"Fertig! Der Stick ist bootfähig und geprüft – du kannst ihn jetzt abziehen."}

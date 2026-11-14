@@ -1,0 +1,37 @@
+[1m[92m   Compiling[0m wie-core v0.0.1 (/home/runner/work/Windows_Iso_editor/Windows_Iso_editor/core)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1.33s
+[1m[92m     Running[0m unittests src/lib.rs (core/target/debug/build/wie-core/f3978b30563b52d0/out/wie_core-f3978b30563b52d0)
+
+running 4 tests
+test crc32::t::known ... ok
+test update::tests::sums ... ok
+test update::tests::update_decision ... ok
+test update::tests::sha ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+[1m[92m     Running[0m tests/catalog.rs (core/target/debug/build/wie-core/7223eabe12d5ceb8/out/catalog-7223eabe12d5ceb8)
+
+running 5 tests
+test presets_are_nested ... ok
+test unique_ids ... ok
+test gaming_and_bluetooth_never_touched ... ok
+test xml_is_ascii_and_commands_fit ... ok
+test no_selected_app_is_protected ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[1m[92m     Running[0m tests/iso.rs (core/target/debug/build/wie-core/85ff228535c6415d/out/iso-85ff228535c6415d)
+
+running 2 tests
+test patch_short_ad ... ok
+test patch_long_ad_trailing_anchor ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+[1m[92m   Doc-tests[0m wie_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
