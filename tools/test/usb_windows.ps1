@@ -110,7 +110,7 @@ function RunWorker([string[]]$extra) {
 
 RunWorker @('--mode', 'windows')
 $l = (Get-Partition -DiskNumber $n -PartitionNumber 1).DriveLetter
-$hu = Hashes "${l}:\"
+$hu = Hashes "${l}:\" | Where-Object { $_ -notmatch 'system volume information' }
 if (Compare-Object $isoHashes $hu) { Compare-Object $isoHashes $hu | Format-Table | Out-String | Write-Host; throw "stick differs from ISO" }
 if ((Get-Volume -DriveLetter $l).FileSystem -ne 'FAT32') { throw "not FAT32" }
 "OK stick (no split)"
