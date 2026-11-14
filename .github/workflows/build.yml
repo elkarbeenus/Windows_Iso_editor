@@ -93,8 +93,10 @@ jobs:
       - name: Windows reads patched ISO + USB stick on virtual disk
         shell: pwsh
         run: |
-          & tools/test/usb_windows.ps1 *>&1 | Tee-Object -FilePath logs/usb-windows.log
-          if (-not (Select-String -Path logs/usb-windows.log -Pattern 'ALL WINDOWS TESTS PASSED' -Quiet)) { exit 1 }
+          $log = Join-Path $PWD 'logs\usb-windows.log'
+          New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null
+          try { & "$PWD\tools\test\usb_windows.ps1" *>&1 | Tee-Object -FilePath $log } catch { "EXCEPTION: $_" | Tee-Object -FilePath $log -Append }
+          if (-not (Select-String -Path $log -Pattern 'ALL WINDOWS TESTS PASSED' -Quiet)) { exit 1 }
       - name: Upload log
         if: always()
         uses: actions/upload-artifact@v4

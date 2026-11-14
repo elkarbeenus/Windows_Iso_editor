@@ -631,18 +631,6 @@ impl Udf {
             Some(t) => self.read_node(t.icb.lbn)?,
             None => root.clone(),
         };
-        // FID CRC convention of this image (padded or unpadded length)
-        let fid_crc_padded = entries
-            .iter()
-            .find(|e| !e.is_parent)
-            .map(|e| {
-                let l_fi = e.raw[19] as usize;
-                let l_iu = u16le(&e.raw, 36) as usize;
-                let crclen = u16le(&e.raw, 10) as usize;
-                crclen != 38 + l_iu + l_fi - 16
-            })
-            .unwrap_or(false);
-
         let mut uid = self.next_unique_id(&entries)?;
         let tag_version = u16le(&root.raw, 2);
 
@@ -753,8 +741,9 @@ impl Udf {
             let pos = dir.len();
             let block = dir_lbn + (pos as u64 / SECTOR) as u32;
             if i >= n_old {
-                let l_fi = fid[19] as usize;
-                let crc_len = if fid_crc_padded { fid.len() - 16 } else { 38 + l_fi - 16 };
+                // CRC over the whole (padded) descriptor – what Windows ISOs use and
+                // what the Linux kernel requires (crc length == entry length - 16)
+                let crc_len = fid.len() - 16;
                 finalize_tag(&mut fid, block, crc_len);
             } else {
                 relocate_tag(&mut fid, block);

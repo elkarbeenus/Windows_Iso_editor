@@ -100,6 +100,8 @@ def walk(lbn, path):
         l_iu, = struct.unpack_from('<H', data, o + 36)
         total = (38 + l_iu + l_fi + 3) // 4 * 4
         check(data[o:o + total], f'FID {path}@{o}', blk, 257)
+        if struct.unpack_from('<H', data, o + 10)[0] != total - 16:
+            errors.append(f'FID {path}@{o}: CRC length != entry length - 16 (Linux kernel rejects this)')
         chars = data[o + 18]
         name = data[o + 38 + l_iu + 1:o + 38 + l_iu + l_fi].decode('latin-1')
         icb = struct.unpack_from('<I', data, o + 24)[0]

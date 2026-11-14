@@ -86,7 +86,7 @@ class Img:
         struct.pack_into('<I', b, 32, uid & 0xFFFFFFFF)
         struct.pack_into('<H', b, 36, l_iu)
         b[38:38 + len(nm)] = nm
-        tag(b, 257, block, 38 + l_iu + len(nm) - 16)
+        tag(b, 257, block, total - 16)  # padded length, as Microsoft ISOs and the Linux kernel expect
         return b
 
     def add_file(self, data):
