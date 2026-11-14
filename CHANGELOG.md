@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.2
+
+**Behoben**
+- SteamOS/Linux: Die Oberfläche blieb grau. Ursache: Das AppImage brachte zu alte `libwayland`-Bibliotheken mit, mit denen der Grafiktreiber von SteamOS den Web-Renderer abstürzen ließ. Sie werden jetzt entfernt, die App nutzt die Systembibliotheken.
+- Zusätzlicher Sicherheitsmodus: Lädt die Oberfläche einmal nicht, startet die App beim nächsten Mal automatisch mit Software-Rendering (manuell erzwingbar mit `WIE_SAFE_MODE=1`).
+- Build prüft jetzt automatisch, dass die Oberfläche startet und gezeichnet wird (Linux und Windows).
+
+**Downloads**
+- `Windows-ISO-Editor_0.0.2_x86_64.AppImage` – Linux / SteamOS
+- `Windows-ISO-Editor_0.0.2_x64-setup.exe` – Windows-Installer
+- `Windows-ISO-Editor_0.0.2_x64-portable.exe` – Windows ohne Installation
+
 ## v0.0.1
 
 Erste Testversion – *first test release*.

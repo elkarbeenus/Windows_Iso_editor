@@ -38,6 +38,7 @@ const MOCK = {
   save_xml: async () => {},
   preview_script: async () => '# preview',
   open_folder: async () => {},
+  ui_ready: async () => {},
 };
 
 // ------------------------------------------------------------------ helpers
@@ -352,6 +353,7 @@ function showInfo() {
 // ------------------------------------------------------------------ init
 async function init() {
   renderStatic();
+  invoke('ui_ready').catch(() => {});
   try {
     state.version = await invoke('app_version');
     state.catalog = JSON.parse(await invoke('get_catalog'));

@@ -100,9 +100,33 @@ jobs:
         run: |
           V=$(node -p "require('./package.json').version")
           mkdir -p out
-          cp src-tauri/target/release/bundle/appimage/*.AppImage "out/Windows-ISO-Editor_${V}_x86_64.AppImage"
+          SRC=$(ls src-tauri/target/release/bundle/appimage/*.AppImage | head -1)
+          # SteamOS fix: the bundled libwayland (Ubuntu 22.04) is too old for the
+          # host Mesa driver -> WebKit renderer crashes -> grey window.
+          # Remove it so the system's libwayland is used (present on every desktop).
+          rm -rf fix && mkdir fix && cd fix
+          "../$SRC" --appimage-extract >/dev/null
+          rm -fv squashfs-root/usr/lib/libwayland-*.so* squashfs-root/usr/lib/x86_64-linux-gnu/libwayland-*.so* 2>/dev/null || true
+          if find squashfs-root -name 'libwayland-*.so*' | grep -q .; then echo "libwayland still bundled"; exit 1; fi
+          wget -q -O appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run squashfs-root "../out/Windows-ISO-Editor_${V}_x86_64.AppImage"
+          cd ..
           chmod +x out/*.AppImage
           ls -la out
+      - name: Smoke test (starts and renders under Xvfb)
+        shell: bash
+        run: |
+          sudo apt-get install -y xvfb imagemagick >/dev/null
+          A=$(ls out/*.AppImage)
+          xvfb-run -a -s "-screen 0 1280x860x24" bash -c "\"$A\" --appimage-extract-and-run > smoke.log 2>&1 & sleep 15; import -window root shot.png; kill %1 || true"
+          cat smoke.log | tail -20
+          mkdir -p logs && cp shot.png logs/smoke.png && cp smoke.log logs/smoke.log
+          # page background is dark navy; a grey/empty window would be ~(51,51,51) or white
+          RGB=$(convert shot.png -format '%[fx:int(255*p{640,170}.r)] %[fx:int(255*p{640,170}.g)] %[fx:int(255*p{640,170}.b)]' info:)
+          echo "pixel: $RGB"
+          set -- $RGB
+          if [ "$1" -lt 40 ] && [ "$3" -gt $(( $1 + 5 )) ]; then echo "UI rendered"; else echo "UI did not render"; exit 1; fi
       - uses: actions/upload-artifact@v4
         with:
           name: linux
@@ -148,6 +172,22 @@ jobs:
             if [ -f "$f" ]; then cp "$f" "out/Windows-ISO-Editor_${V}_x64-portable.exe"; break; fi
           done
           ls out/*-portable.exe
+      - name: Smoke test (start exe, take screenshot)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem out\*-portable.exe | Select-Object -First 1
+          $p = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 15
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          $g = [System.Drawing.Graphics]::FromImage($bmp)
+          $g.CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          New-Item -ItemType Directory -Force logs | Out-Null
+          $bmp.Save("logs\smoke-windows.png", [System.Drawing.Imaging.ImageFormat]::Png)
+          "alive=$(-not $p.HasExited)" | Tee-Object logs\smoke-windows.txt
+          if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
           ls -la out
       - uses: actions/upload-artifact@v4
         with:

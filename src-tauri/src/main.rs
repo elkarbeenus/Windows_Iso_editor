@@ -139,12 +139,44 @@ fn open_folder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Marker file: exists while a start is "unconfirmed". If the UI never reports
+/// back (grey window), the next start uses software rendering.
+fn start_marker() -> Option<PathBuf> {
+    let base = if cfg!(target_os = "windows") {
+        std::env::var_os("APPDATA").map(PathBuf::from)
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+    };
+    base.map(|b| b.join("windows-iso-editor").join("start-unconfirmed"))
+}
+
+/// Called by the UI as soon as it is visible.
+#[tauri::command]
+fn ui_ready() {
+    if let Some(m) = start_marker() {
+        let _ = std::fs::remove_file(m);
+    }
+}
+
 fn main() {
     #[cfg(target_os = "linux")]
     {
         // Stable rendering on SteamOS / newer WebKitGTK (prevents grey or empty windows)
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+        let previous_failed = start_marker().map(|m| m.exists()).unwrap_or(false);
+        if previous_failed || std::env::var_os("WIE_SAFE_MODE").is_some() {
+            // last start never showed the UI -> software rendering (always works)
+            std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
+        }
+        if let Some(m) = start_marker() {
+            if let Some(d) = m.parent() {
+                let _ = std::fs::create_dir_all(d);
+            }
+            let _ = std::fs::write(&m, if previous_failed { "safe" } else { "normal" });
+        }
     }
 
     tauri::Builder::default()
@@ -154,7 +186,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![app_version, get_catalog, inspect_iso, build_iso, save_xml, preview_script, open_folder])
+        .invoke_handler(tauri::generate_handler![app_version, get_catalog, inspect_iso, build_iso, save_xml, preview_script, open_folder, ui_ready])
         .run(tauri::generate_context!())
         .expect("error while running Windows ISO Editor");
 }
