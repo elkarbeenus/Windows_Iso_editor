@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.0.4
+
+**Behoben**
+- SteamOS/Linux: USB-Stick-Erstellung brach mit „mount: … libmount.so.1: version `MOUNT_2_42' not found“ ab. Ursache: Der Root-Helfer gab den Bibliothekspfad des AppImage an Systemprogramme weiter, `mount` lud dadurch die alte `libmount` aus dem AppImage. Die Umgebung wird jetzt vor jedem Systemaufruf bereinigt.
+- Neuer Build-Test: Das fertige AppImage erstellt selbst (wie über pkexec) einen Windows-Stick inklusive aufgeteilter install.wim und prüft, dass keine AppImage-Bibliotheken an Systemprogramme durchsickern.
+
+**Hinweis:** Diese Version gibt es nur als AppImage (Linux/SteamOS). Windows-Builds folgen später wieder. Wer v0.0.3 hat, bekommt das Update direkt in der App über „Jetzt aktualisieren“.
+
+**Download**
+- `Windows-ISO-Editor_0.0.4_x86_64.AppImage` – Linux / SteamOS
+
 ## v0.0.3
 
 **Neu: Bootfähige USB-Sticks direkt in der App** – zwei Programme in einem

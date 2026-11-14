@@ -488,8 +488,37 @@ pub fn parse_worker_args(args: &[String]) -> R<WorkerArgs> {
     })
 }
 
+/// Variables set by the AppImage runtime / AppRun hooks. They must not reach
+/// system tools (mount, umount, blockdev, …): with the AppImage's
+/// LD_LIBRARY_PATH, /usr/bin/mount would load the bundled, older libmount.
+pub const APPIMAGE_ENV: &[&str] = &[
+    "LD_LIBRARY_PATH", "LD_PRELOAD", "APPDIR", "APPIMAGE", "OWD", "ARGV0", "APPIMAGE_EXTRACT_AND_RUN",
+    "GDK_PIXBUF_MODULE_FILE", "GDK_PIXBUF_MODULEDIR", "GDK_BACKEND", "GIO_MODULE_DIR", "GIO_EXTRA_MODULES",
+    "GTK_PATH", "GTK_EXE_PREFIX", "GTK_DATA_PREFIX", "GTK_IM_MODULE_FILE", "GTK_THEME", "GSETTINGS_SCHEMA_DIR",
+    "GI_TYPELIB_PATH", "GST_PLUGIN_SYSTEM_PATH", "GST_PLUGIN_SYSTEM_PATH_1_0", "PYTHONHOME", "PYTHONPATH", "PERLLIB",
+    "QT_PLUGIN_PATH", "XDG_DATA_DIRS",
+];
+
 /// Entry point of the elevated worker. Returns the process exit code.
 pub fn worker_main(args: &[String]) -> i32 {
+    // clean environment for every child process (mount, mkfs.fat, wimlib, …)
+    for v in APPIMAGE_ENV {
+        std::env::remove_var(v);
+    }
+    if std::env::var_os("PATH").is_none() {
+        std::env::set_var("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin");
+    }
+    // diagnostics / CI: show the environment child processes get
+    if args.iter().any(|a| a == "--env-check") {
+        #[cfg(unix)]
+        if let Ok(o) = std::process::Command::new("env").output() {
+            print!("{}", String::from_utf8_lossy(&o.stdout));
+        }
+        if let Ok(o) = std::process::Command::new("mount").arg("--version").output() {
+            println!("mount --version: {} {}", String::from_utf8_lossy(&o.stdout).trim(), String::from_utf8_lossy(&o.stderr).trim());
+        }
+        return 0;
+    }
     let wa = match parse_worker_args(args) {
         Ok(a) => a,
         Err(e) => {

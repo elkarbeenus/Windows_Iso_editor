@@ -78,6 +78,8 @@ jobs:
           retention-days: 5
 
   test-windows:
+    # Windows builds are paused for now (AppImage first) – set to true to re-enable
+    if: false
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -177,6 +179,33 @@ jobs:
           grep -i -E "iso|editor" windows.txt || true
           mkdir -p logs && cp shot.png logs/smoke.png && cp smoke.log logs/smoke.log && cp windows.txt logs/windows.txt
           if [ -f smoke.result ]; then echo "UI rendered"; else echo "UI did not render"; exit 1; fi
+      - name: USB worker test through the finished AppImage (like pkexec runs it)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -qq wimtools >/dev/null
+          A="$(readlink -f out/*.AppImage)"
+          # 1) no AppImage library path may reach system tools (mount, umount, ...)
+          sudo env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin APPIMAGE_EXTRACT_AND_RUN=1 "$A" --usb-worker --env-check | tee envcheck.txt
+          if grep -E "^(LD_LIBRARY_PATH|LD_PRELOAD)=" envcheck.txt; then echo "AppImage environment leaks into child processes"; exit 1; fi
+          grep -q "mount --version: mount from util-linux" envcheck.txt
+          # 2) full Windows stick incl. split install.wim, written by the AppImage's own worker
+          cargo build --manifest-path core/Cargo.toml --example wie-cli
+          T=$(mktemp -d); mkdir -p $T/w/sub
+          head -c 3000000 /dev/urandom > $T/w/a.bin; head -c 1000000 /dev/urandom > $T/w/sub/b.bin
+          wimlib-imagex capture $T/w $T/test.wim Test --compress=none >/dev/null
+          python3 tools/test/gen_udf.py $T/in.iso --wim $T/test.wim
+          core/target/debug/examples/wie-cli build $T/in.iso $T/out.iso recommended
+          truncate -s 1200M $T/stick.img
+          L=$(sudo losetup -P -f --show $T/stick.img)
+          sudo env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin WIE_SPLIT_THRESHOLD=100000 WIE_SPLIT_MB=1 APPIMAGE_EXTRACT_AND_RUN=1 \
+            "$A" --usb-worker --image $T/out.iso --device $L --mode windows --force-any --lang de | tee worker.log | tail -3
+          grep -q '"t":"done"' worker.log
+          mkdir -p $T/m && sudo mount ${L}p1 $T/m && ls -la $T/m $T/m/sources
+          test -e $T/m/sources/install.swm && test -e $T/m/autounattend.xml
+          sudo umount $T/m && sudo losetup -d $L
+          mkdir -p logs && cp envcheck.txt worker.log logs/
+          echo "AppImage worker OK"
       - uses: actions/upload-artifact@v4
         with:
           name: linux
@@ -193,7 +222,8 @@ jobs:
 
   build-windows:
     needs: [meta, test, test-windows]
-    if: needs.meta.outputs.build == 'true'
+    # paused for now (AppImage first)
+    if: false
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -255,7 +285,7 @@ jobs:
 
   release:
     if: needs.meta.outputs.release == 'true'
-    needs: [meta, test, test-windows, build-linux, build-windows]
+    needs: [meta, test, build-linux]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -273,7 +303,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p upload
-          cp dist/linux/*.AppImage dist/windows/*.exe upload/
+          cp dist/linux/*.AppImage upload/
+          cp dist/windows/*.exe upload/ 2>/dev/null || true
           (cd upload && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
       - uses: softprops/action-gh-release@v2
         with:
@@ -284,7 +315,8 @@ jobs:
           make_latest: true
           files: |
             upload/*
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
+
 
   # Writes the result of every job (plus logs) to the branch "ci-status",
   # so the state can be checked with plain git.
@@ -311,7 +343,7 @@ jobs:
           sha=${GITHUB_SHA}
           run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
           test=${{ needs.test.result }}
-          test-windows=${{ needs.test-windows.result }}
+          test-windows=${{ needs.test-windows.result }} (paused)
           build-linux=${{ needs.build-linux.result }}
           build-windows=${{ needs.build-windows.result }}
           release=${{ needs.release.result }}
